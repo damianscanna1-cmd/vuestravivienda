@@ -597,7 +597,7 @@ elif modo == "Panel de Administración (Crear/Editar)":
                 p_data = db["propiedades"][prop_edit]
 
                 st.subheader("🖼️ Portada de Acceso del Cliente")
-                st.caption("Esta imagen será la portada de esta vivienda.")
+                st.caption("Esta imagen ocupa el recuadro principal de acceso. Cada vivienda tiene su propia portada independiente.")
 
                 if p_data.get("portada"):
                     st.image(
@@ -800,18 +800,65 @@ elif modo == "Panel de Administración (Crear/Editar)":
                     st.rerun()
 
         with tab3:
-            st.subheader("Añadir Nueva Propiedad al Portafolio")
+            st.subheader("➕ Añadir Nueva Propiedad al Portafolio")
+            st.caption(
+                "Cada vivienda nueva tendrá su propia portada. La imagen que subas aquí "
+                "será la imagen que aparecerá en el recuadro de acceso privado de esa vivienda."
+            )
+
             new_id = st.text_input(
                 "Identificador único (ej: piso-gran-via, atico-patacona)",
                 key="new_property_id"
             )
 
-            if st.button("Crear Inmueble", key="create_property"):
-                if new_id and new_id not in db["propiedades"]:
+            col_new_1, col_new_2 = st.columns(2)
+            new_title_es = col_new_1.text_input(
+                "Nombre de la vivienda (ES)",
+                value="Nueva Propiedad",
+                key="new_property_title_es"
+            )
+            new_title_en = col_new_2.text_input(
+                "Nombre de la vivienda (EN)",
+                value="New Property",
+                key="new_property_title_en"
+            )
+
+            new_location = st.text_input(
+                "Ubicación",
+                value="Valencia, España",
+                key="new_property_location"
+            )
+
+            st.markdown("### 🖼️ Portada de esta vivienda")
+            st.info(
+                "Sube aquí la imagen que quieres que aparezca en el recuadro grande "
+                "de acceso del cliente. Cada vivienda guarda su propia portada."
+            )
+
+            new_cover = st.file_uploader(
+                "📤 Subir portada de la vivienda",
+                type=["jpg", "jpeg", "png", "webp"],
+                accept_multiple_files=False,
+                key="new_property_cover"
+            )
+
+            if new_cover:
+                st.image(
+                    new_cover,
+                    caption="Vista previa de la portada que se guardará",
+                    use_container_width=True
+                )
+
+            if st.button("🏠 Crear Inmueble y Guardar Portada", key="create_property"):
+                if not new_id.strip():
+                    st.error("Introduce un identificador único para la vivienda.")
+                elif new_id in db["propiedades"]:
+                    st.error("Ese identificador ya existe.")
+                else:
                     db["propiedades"][new_id] = {
-                        "titulo_es": "Nueva Propiedad",
-                        "titulo_en": "New Property",
-                        "ubicacion": "Valencia, España",
+                        "titulo_es": new_title_es.strip() or "Nueva Propiedad",
+                        "titulo_en": new_title_en.strip() or "New Property",
+                        "ubicacion": new_location.strip() or "Valencia, España",
                         "precio": "0 €",
                         "superficie": "0 m²",
                         "habitaciones": "0",
@@ -819,15 +866,18 @@ elif modo == "Panel de Administración (Crear/Editar)":
                         "descripcion_es": "Descripción...",
                         "descripcion_en": "Description...",
                         "video_url": "",
-                        "portada": "",
+                        "portada": image_to_base64(new_cover) if new_cover else "",
                         "usuarios": {},
                         "imagenes": []
                     }
-                    guardar_datos(db)
-                    st.success(f"Propiedad '{new_id}' creada correctamente.")
-                    st.rerun()
-                elif new_id in db["propiedades"]:
-                    st.error("Ese identificador ya existe.")
+                    if guardar_datos(db):
+                        st.success(
+                            f"✅ '{new_title_es}' creada correctamente"
+                            + (" con su portada." if new_cover else ". Puedes subir la portada desde 'Editar Propiedad'.")
+                        )
+                        st.rerun()
+                    else:
+                        st.error("No se pudo guardar la vivienda en el almacenamiento de sesión.")
 
     elif admin_pass != "":
         st.error("Clave de administrador incorrecta. Acceso denegado.")
