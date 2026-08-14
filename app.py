@@ -2,6 +2,8 @@ import streamlit as st
 import json
 import os
 import base64
+import secrets
+import string
 from PIL import Image
 import io
 import streamlit.components.v1 as components
@@ -136,13 +138,19 @@ def cargar_datos():
                 "video_url": "https://www.youtube.com/embed/dQw4w9WgXcQ",
                 "portada": "",
                 "usuarios": {
-                    "cliente_principal": {"password": "Cliente2026", "visitas": 0}
+                    "cliente_principal": {"password": "nala0711", "visitas": 0}
                 },
                 "imagenes": []
             }
         },
         "admin_password": "Admin2026Password"
     }
+
+def generar_contrasena(longitud=12):
+    """Genera una contraseña aleatoria segura para un cliente."""
+    caracteres = string.ascii_letters + string.digits
+    return "".join(secrets.choice(caracteres) for _ in range(longitud))
+
 
 def guardar_datos(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -559,6 +567,16 @@ elif modo == "Panel de Administración (Crear/Editar)":
 
         with tab2:
             st.subheader("👥 Gestión de Contraseñas de Usuario y Contador de Visitas")
+
+            with st.expander("🔐 Generador de Contraseñas del Administrador", expanded=True):
+                st.caption("Genera una clave independiente para asignarla a cualquier vivienda o cliente.")
+                longitud_clave = st.slider("Longitud de la contraseña", 8, 32, 12, key="admin_password_length")
+                if st.button("🎲 Generar nueva contraseña", key="admin_generate_password"):
+                    st.session_state.admin_generated_password = generar_contrasena(longitud_clave)
+                if "admin_generated_password" in st.session_state:
+                    st.code(st.session_state.admin_generated_password, language=None)
+                    st.caption("Copia esta contraseña y asígnala al usuario desde la sección correspondiente.")
+
             prop_users_key = st.selectbox("Seleccionar Inmueble para ver usuarios:", list(db["propiedades"].keys()), key="users_prop_select")
             u_data = db["propiedades"][prop_users_key]
 
@@ -569,12 +587,27 @@ elif modo == "Panel de Administración (Crear/Editar)":
             if u_data["usuarios"]:
                 for u_name, u_info in list(u_data["usuarios"].items()):
                     with st.expander(f"👤 {u_name} — 👁️ {u_info['visitas']} visitas"):
-                        nueva_contra = st.text_input(f"Cambiar contraseña para '{u_name}':", value=u_info["password"], type="password", key=f"pass_{prop_users_key}_{u_name}")
-                        col_u1, col_u2 = st.columns(2)
+                        nueva_contra = st.text_input(
+                            f"Cambiar contraseña para '{u_name}':",
+                            value=u_info["password"],
+                            type="password",
+                            key=f"pass_{prop_users_key}_{u_name}"
+                        )
+                        col_u1, col_u2, col_u3 = st.columns(3)
                         if col_u1.button(f"Actualizar Clave", key=f"save_{prop_users_key}_{u_name}"):
-                            u_data["usuarios"][u_name]["password"] = nueva_contra
+                            if nueva_contra.strip():
+                                u_data["usuarios"][u_name]["password"] = nueva_contra.strip()
+                                guardar_datos(db)
+                                st.success(f"Contraseña actualizada para {u_name}.")
+                                st.rerun()
+                            else:
+                                st.warning("La contraseña no puede estar vacía.")
+                        if col_u2.button("🔐 Generar Clave", key=f"gen_{prop_users_key}_{u_name}"):
+                            nueva_generada = generar_contrasena()
+                            u_data["usuarios"][u_name]["password"] = nueva_generada
                             guardar_datos(db)
-                            st.success(f"Contraseña actualizada para {u_name}.")
+                            st.success(f"Nueva contraseña generada para {u_name}: `{nueva_generada}`")
+                            st.info("Guárdala antes de cerrar o recargar esta página.")
                             st.rerun()
                         if col_u2.button(f"🗑️ Eliminar Usuario", key=f"del_u_{prop_users_key}_{u_name}"):
                             del u_data["usuarios"][u_name]
@@ -587,14 +620,28 @@ elif modo == "Panel de Administración (Crear/Editar)":
             st.markdown("---")
             st.subheader("➕ Añadir Nuevo Usuario a esta Propiedad")
             nuevo_usuario_nombre = st.text_input("Nombre del Usuario / Cliente:")
-            nuevo_usuario_pass = st.text_input("Contraseña Asignada:", type="password", key="new_user_pass_input")
+            nuevo_usuario_pass = st.text_input(
+                "Contraseña Asignada (por defecto: nala0711):",
+                value="nala0711",
+                type="password",
+                key="new_user_pass_input"
+            )
+            if st.button("🎲 Generar contraseña para este cliente", key="generate_new_user_password"):
+                st.session_state.generated_new_password = generar_contrasena()
+                st.rerun()
+
+            if "generated_new_password" in st.session_state:
+                st.info(f"Contraseña generada: `{st.session_state.generated_new_password}`")
+                nuevo_usuario_pass = st.session_state.generated_new_password
 
             if st.button("Crear Usuario y Asignar Clave"):
                 if nuevo_usuario_nombre:
                     if nuevo_usuario_nombre not in u_data["usuarios"]:
-                        u_data["usuarios"][nuevo_usuario_nombre] = {"password": nuevo_usuario_pass, "visitas": 0}
+                        password_final = nuevo_usuario_pass.strip() or "nala0711"
+                        u_data["usuarios"][nuevo_usuario_nombre] = {"password": password_final, "visitas": 0}
                         guardar_datos(db)
-                        st.success(f"Usuario '{nuevo_usuario_nombre}' creado con éxito.")
+                        st.success(f"Usuario '{nuevo_usuario_nombre}' creado con éxito. Contraseña: `{password_final}`")
+                        st.session_state.pop("generated_new_password", None)
                         st.rerun()
                     else:
                         st.error("Ese nombre de usuario ya existe en esta propiedad.")
@@ -619,7 +666,7 @@ elif modo == "Panel de Administración (Crear/Editar)":
                         "video_url": "",
                         "portada": "",
                         "usuarios": {
-                            "cliente_inicial": {"password": "1234", "visitas": 0}
+                            "cliente_inicial": {"password": "nala0711", "visitas": 0}
                         },
                         "imagenes": []
                     }
@@ -630,3 +677,4 @@ elif modo == "Panel de Administración (Crear/Editar)":
                     st.error("Ese identificador ya existe.")
     elif admin_pass != "":
         st.error("Clave de administrador incorrecta. Acceso denegado.")
+      
