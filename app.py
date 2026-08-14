@@ -91,7 +91,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-DATA_FILE = "propiedades.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_DATA_FILE = os.path.join(BASE_DIR, "propiedades.json")
+RUNTIME_DATA_FILE = os.path.join("/tmp", "dossier_inmobiliario_propiedades.json")
+DATA_FILE = REPO_DATA_FILE
 WHATSAPP_NUMBER = "34637128212"
 
 # -----------------------------------------------------------------------------
@@ -130,51 +133,56 @@ def datos_por_defecto():
         "admin_password": "Admin2026Password"
     }
 
+def _normalizar_datos(data):
+    """Garantiza la estructura mínima sin sobrescribir datos existentes."""
+    if not isinstance(data, dict):
+        data = {}
+    data.setdefault("propiedades", {})
+    data.setdefault("admin_password", "Admin2026Password")
+    if not isinstance(data["propiedades"], dict):
+        data["propiedades"] = {}
+
+    for prop_id, prop_info in list(data["propiedades"].items()):
+        if not isinstance(prop_info, dict):
+            prop_info = {}
+            data["propiedades"][prop_id] = prop_info
+        prop_info.setdefault("titulo_es", "Nueva Propiedad")
+        prop_info.setdefault("titulo_en", "New Property")
+        prop_info.setdefault("ubicacion", "Valencia, España")
+        prop_info.setdefault("precio", "Consultar")
+        prop_info.setdefault("superficie", "Consultar")
+        prop_info.setdefault("habitaciones", "Consultar")
+        prop_info.setdefault("banos", "Consultar")
+        prop_info.setdefault("descripcion_es", "")
+        prop_info.setdefault("descripcion_en", "")
+        prop_info.setdefault("portada", "")
+        prop_info.setdefault("imagenes", [])
+        prop_info.setdefault("video_url", "")
+        if not isinstance(prop_info["imagenes"], list):
+            prop_info["imagenes"] = []
+    return data
+
+
 def cargar_datos():
-    """Carga los datos sin romper la aplicación si el JSON está vacío o corrupto."""
-    if not os.path.exists(DATA_FILE):
-        return datos_por_defecto()
-
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8-sig") as f:
-            contenido = f.read().strip()
-
-        # Streamlit Cloud puede dejar un archivo vacío después de una escritura
-        # interrumpida. Un archivo vacío no debe impedir que arranque la app.
-        if not contenido:
-            raise json.JSONDecodeError("Archivo JSON vacío", "", 0)
-
-        data = json.loads(contenido)
-        if not isinstance(data, dict):
-            raise json.JSONDecodeError("La raíz del JSON no es un objeto", contenido, 0)
-
-        data.setdefault("propiedades", {})
-        data.setdefault("admin_password", "Admin2026Password")
-
-        # Compatibilidad con versiones anteriores.
-        for prop_id, prop_info in data["propiedades"].items():
-            if not isinstance(prop_info, dict):
-                data["propiedades"][prop_id] = {}
-                prop_info = data["propiedades"][prop_id]
-            prop_info.setdefault("portada", "")
-            prop_info.setdefault("imagenes", [])
-            prop_info.setdefault("video_url", "")
-
-        return data
-
-    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
-        # No borramos el archivo dañado: lo conservamos para poder recuperarlo.
+    """Carga primero el almacenamiento de runtime y después el JSON del proyecto.
+    Nunca permite que un JSON vacío/corrupto impida iniciar la aplicación.
+    """
+    candidatos = [RUNTIME_DATA_FILE, REPO_DATA_FILE]
+    for ruta in candidatos:
+        if not os.path.exists(ruta):
+            continue
         try:
-            backup = DATA_FILE + ".corrupto.backup"
-            if os.path.exists(backup):
-                import time
-                backup = DATA_FILE + f".corrupto.{int(time.time())}.backup"
-            os.replace(DATA_FILE, backup)
-        except OSError:
-            pass
+            with open(ruta, "r", encoding="utf-8-sig") as f:
+                contenido = f.read().strip()
+            if not contenido:
+                continue
+            data = json.loads(contenido)
+            if isinstance(data, dict):
+                return _normalizar_datos(data)
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError, TypeError):
+            continue
 
-        # La app continúa funcionando con una base limpia.
-        return datos_por_defecto()
+    return _normalizar_datos(datos_por_defecto())
 
 def generar_contrasena(longitud=12):
     """Genera una contraseña aleatoria segura para un cliente."""
@@ -183,13 +191,29 @@ def generar_contrasena(longitud=12):
 
 
 def guardar_datos(data):
-    """Guarda de forma atómica para evitar dejar propiedades.json vacío."""
-    tmp_file = DATA_FILE + ".tmp"
-    with open(tmp_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_file, DATA_FILE)
+    """Guarda en /tmp de forma segura. Si el archivo del repositorio es de solo
+    lectura, la app sigue funcionando y conserva los cambios durante la sesión.
+    """
+    global DATA_FILE
+    data = _normalizar_datos(data)
+    os.makedirs(os.path.dirname(RUNTIME_DATA_FILE), exist_ok=True)
+    tmp_file = RUNTIME_DATA_FILE + f".{os.getpid()}.tmp"
+    try:
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_file, RUNTIME_DATA_FILE)
+        DATA_FILE = RUNTIME_DATA_FILE
+        return True
+    except OSError:
+        try:
+            if os.path.exists(tmp_file):
+                os.remove(tmp_file)
+        except OSError:
+            pass
+        # Último recurso: no lanzar excepción; la app continúa con db en memoria.
+        return False
 
 db = cargar_datos()
 
@@ -326,19 +350,29 @@ if "auth_client_user" not in st.session_state:
 if "usuarios" not in db or not isinstance(db["usuarios"], dict):
     db["usuarios"] = {}
 
+# Recuperar clientes de la estructura antigua, si existe.
+if not db["usuarios"]:
+    for prop_id, prop_info in db.get("propiedades", {}).items():
+        for old_name, old_info in prop_info.get("usuarios", {}).items():
+            if isinstance(old_info, dict) and old_info.get("password"):
+                if old_name not in db["usuarios"]:
+                    db["usuarios"][old_name] = {
+                        "password": old_info["password"],
+                        "propiedades_permitidas": []
+                    }
+                db["usuarios"][old_name]["propiedades_permitidas"].append(prop_id)
+
 if "cliente_principal" not in db["usuarios"]:
     db["usuarios"]["cliente_principal"] = {
         "password": "nala0711",
         "propiedades_permitidas": list(db.get("propiedades", {}).keys())
     }
-    guardar_datos(db)
 
 for u_name, u_info in db["usuarios"].items():
     if not u_info.get("password"):
         u_info["password"] = "nala0711"
     if "propiedades_permitidas" not in u_info:
         u_info["propiedades_permitidas"] = list(db.get("propiedades", {}).keys())
-guardar_datos(db)
 
 # -----------------------------------------------------------------------------
 # NAVEGACIÓN
