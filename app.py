@@ -106,23 +106,7 @@ def image_to_base64(image_file):
     img.save(buffered, format="JPEG", quality=85)
     return base64.b64encode(buffered.getvalue()).decode()
 
-def cargar_datos():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            # Asegurar compatibilidad si propiedades antiguas no tienen "usuarios"
-            for prop_id, prop_info in data["propiedades"].items():
-                if "portada" not in prop_info:
-                    prop_info["portada"] = ""
-                if "usuarios" not in prop_info:
-                    old_pass = prop_info.get("password_cliente", "Cliente2026")
-                    prop_info["usuarios"] = {
-                        "cliente_principal": {"password": old_pass, "visitas": 0}
-                    }
-                    if "password_cliente" in prop_info:
-                        del prop_info["password_cliente"]
-            return data
-            
+def datos_por_defecto():
     return {
         "propiedades": {
             "vivienda-01": {
@@ -146,6 +130,52 @@ def cargar_datos():
         "admin_password": "Admin2026Password"
     }
 
+def cargar_datos():
+    """Carga los datos sin romper la aplicación si el JSON está vacío o corrupto."""
+    if not os.path.exists(DATA_FILE):
+        return datos_por_defecto()
+
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8-sig") as f:
+            contenido = f.read().strip()
+
+        # Streamlit Cloud puede dejar un archivo vacío después de una escritura
+        # interrumpida. Un archivo vacío no debe impedir que arranque la app.
+        if not contenido:
+            raise json.JSONDecodeError("Archivo JSON vacío", "", 0)
+
+        data = json.loads(contenido)
+        if not isinstance(data, dict):
+            raise json.JSONDecodeError("La raíz del JSON no es un objeto", contenido, 0)
+
+        data.setdefault("propiedades", {})
+        data.setdefault("admin_password", "Admin2026Password")
+
+        # Compatibilidad con versiones anteriores.
+        for prop_id, prop_info in data["propiedades"].items():
+            if not isinstance(prop_info, dict):
+                data["propiedades"][prop_id] = {}
+                prop_info = data["propiedades"][prop_id]
+            prop_info.setdefault("portada", "")
+            prop_info.setdefault("imagenes", [])
+            prop_info.setdefault("video_url", "")
+
+        return data
+
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+        # No borramos el archivo dañado: lo conservamos para poder recuperarlo.
+        try:
+            backup = DATA_FILE + ".corrupto.backup"
+            if os.path.exists(backup):
+                import time
+                backup = DATA_FILE + f".corrupto.{int(time.time())}.backup"
+            os.replace(DATA_FILE, backup)
+        except OSError:
+            pass
+
+        # La app continúa funcionando con una base limpia.
+        return datos_por_defecto()
+
 def generar_contrasena(longitud=12):
     """Genera una contraseña aleatoria segura para un cliente."""
     caracteres = string.ascii_letters + string.digits
@@ -153,8 +183,13 @@ def generar_contrasena(longitud=12):
 
 
 def guardar_datos(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
+    """Guarda de forma atómica para evitar dejar propiedades.json vacío."""
+    tmp_file = DATA_FILE + ".tmp"
+    with open(tmp_file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_file, DATA_FILE)
 
 db = cargar_datos()
 
