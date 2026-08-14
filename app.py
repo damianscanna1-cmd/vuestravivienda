@@ -1,4 +1,3 @@
-
 import streamlit as st
 
 st.set_page_config(page_title="Residencia Exclusiva", layout="wide")
@@ -11,14 +10,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.components.v1.html("
+html_code = """
 <!DOCTYPE html>
-<html lang=\"es\">
+<html lang="es">
 <head>
-  <meta charset=\"UTF-8\">
-  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Residencia Exclusiva — Dossier Privado</title>
-  <link href=\"https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap\" rel=\"stylesheet\">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg-color: #0f1115;
@@ -50,32 +49,34 @@ st.components.v1.html("
   </style>
 </head>
 <body>
-  <div class=\"container\">
-    <div class=\"top-bar\">
-      <span class=\"tag-private\">Dossier Privado</span>
+  <div class="container">
+    <div class="top-bar">
+      <span class="tag-private">Dossier Privado</span>
     </div>
     <h1>Ático / Ático Dúplex de Lujo</h1>
-    <p class=\"location\">Valencia, España</p>
-    <section class=\"hero-gallery\">
-      <img src=\"https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80\" alt=\"Salón\">
-      <div style=\"display:grid; gap:15px;\">
-        <img src=\"https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=800&q=80\" alt=\"Interior\">
-        <img src=\"https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=800&q=80\" alt=\"Terraza\">
+    <p class="location">Valencia, España</p>
+    <section class="hero-gallery">
+      <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80" alt="Salón">
+      <div style="display:grid; gap:15px;">
+        <img src="https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=800&q=80" alt="Interior">
+        <img src="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=800&q=80" alt="Terraza">
       </div>
     </section>
-    <section class=\"video-wrapper\">
-      <iframe src=\"https://www.youtube.com/embed/dQw4w9WgXcQ\" allowfullscreen></iframe>
+    <section class="video-wrapper">
+      <iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" allowfullscreen></iframe>
     </section>
-    <section class=\"features-grid\" style=\"margin-top:40px;\">
-      <div class=\"feature-card\"><div class=\"feature-value\">180 m²</div><div class=\"feature-label\">Superficie</div></div>
-      <div class=\"feature-card\"><div class=\"feature-value\">3</div><div class=\"feature-label\">Habitaciones</div></div>
-      <div class=\"feature-card\"><div class=\"feature-value\">2</div><div class=\"feature-label\">Baños</div></div>
+    <section class="features-grid" style="margin-top:40px;">
+      <div class="feature-card"><div class="feature-value">180 m²</div><div class="feature-label">Superficie</div></div>
+      <div class="feature-card"><div class="feature-value">3</div><div class="feature-label">Habitaciones</div></div>
+      <div class="feature-card"><div class="feature-value">2</div><div class="feature-label">Baños</div></div>
     </section>
-    <div class=\"price-card\">
-      <div class=\"price-amount\">485.000 €</div>
-      <a href=\"https://wa.me/34000000000\" class=\"btn-contact\">Solicitar Información</a>
+    <div class="price-card">
+      <div class="price-amount">485.000 €</div>
+      <a href="https://wa.me/34000000000" class="btn-contact">Solicitar Información</a>
     </div>
   </div>
 </body>
 </html>
-", height=2500, scrolling=True)
+"""
+
+st.components.v1.html(html_code, height=2500, scrolling=True)
