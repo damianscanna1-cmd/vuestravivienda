@@ -1,311 +1,632 @@
 import streamlit as st
+import json
+import os
+import base64
 from PIL import Image
+import io
+import streamlit.components.v1 as components
 
-# Configuración de página
-st.set_page_config(page_title="Dossier Privado de Propiedades", layout="wide")
+# -----------------------------------------------------------------------------
+# CONFIGURACIÓN Y BLOQUEO CSS DE ELEMENTOS NATIVOS
+# -----------------------------------------------------------------------------
+st.set_page_config(
+    page_title="Dossier Inmobiliario Privado",
+    page_icon="🔒",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Estilos CSS personalizados (Modo Oscuro Elegante / Lujo)
 st.markdown("""
-<style>
-    :root {
-        --bg-color: #0f1115;
-        --card-bg: #181b22;
-        --accent-color: #c5a880;
-        --text-main: #f3f4f6;
-        --text-muted: #9ca3af;
-        --border-color: #272b35;
+    <style>
+    /* Ocultamiento estricto y bloqueo absoluto de elementos flotantes, badges y toolbar */
+    #MainMenu, header, footer, [data-testid="stHeader"], [data-testid="stToolbar"], 
+    [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stAppDeployButton {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        height: 0px !important;
+        max-height: 0px !important;
     }
-    .stApp {
-        background-color: var(--bg-color);
-        color: var(--text-main);
+    
+    div[class*="viewerBadge"], 
+    div[class*="stActionButton"], 
+    div[class*="viewerBadge_container"],
+    iframe[src*="streamlit"] {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        z-index: -999999 !important;
     }
-    .tag-private {
-        font-size: 0.75rem;
-        text-transform: uppercase;
-        letter-spacing: 2px;
-        color: var(--accent-color);
-        border: 1px solid var(--accent-color);
-        padding: 4px 12px;
-        border-radius: 20px;
-        display: inline-block;
-        margin-bottom: 15px;
+    
+    html, body, .stApp {
+        background-color: #0f1115;
+        color: #f3f4f6;
+        max-width: 100vw;
+        overflow-x: hidden !important;
     }
-    .price-card {
-        background-color: var(--card-bg);
-        border: 1px solid var(--accent-color);
-        padding: 30px;
-        border-radius: 16px;
-        text-align: center;
+    
+    .main { 
+        background-color: #0f1115; 
+        color: #f3f4f6;
+        padding-top: 1rem !important;
     }
-    .price-amount {
-        font-size: 2.2rem;
-        font-weight: 700;
-        color: var(--text-main);
-        margin-bottom: 10px;
-    }
-    .btn-contact {
-        display: block;
+
+    h1, h2, h3 { color: #c5a880 !important; }
+    
+    /* Botones estándar de la aplicación */
+    .stButton>button { 
+        background-color: #c5a880; 
+        color: #0f1115; 
+        font-weight: bold; 
+        border-radius: 8px; 
         width: 100%;
-        background-color: var(--accent-color);
-        color: #0f1115;
-        text-decoration: none;
-        font-weight: 600;
-        padding: 14px 0;
-        border-radius: 8px;
-        text-align: center;
-        margin-top: 15px;
     }
-    .btn-contact:hover { background-color: #d8b98f; }
-    h1, h2, h3 { color: var(--text-main); }
-</style>
+
+    /* Unificar colores de métricas (m², hab, baños, precio) para evitar cambios según navegador */
+    [data-testid="stMetricValue"], [data-testid="stMetricLabel"], [data-testid="stMetricDelta"] {
+        color: #f3f4f6 !important;
+    }
+    [data-testid="stMetricValue"] {
+        color: #c5a880 !important;
+    }
+
+    /* Forzar estilo del link_button de WhatsApp en color verde corporativo */
+    div.stLinkButton > a {
+        background-color: #25D366 !important;
+        color: #ffffff !important;
+        font-weight: bold !important;
+        border-radius: 8px !important;
+        border: none !important;
+        width: 100% !important;
+        text-align: center !important;
+    }
+    div.stLinkButton > a:hover {
+        background-color: #22bf5b !important;
+        color: #ffffff !important;
+    }
+    </style>
 """, unsafe_allow_html=True)
 
-# Inicializar almacenamiento de propiedades en session_state
-if "properties" not in st.session_state:
-    st.session_state.properties = [
-        {
-            "id": 1,
-            "title": "Ático / Ático Dúplex de Lujo",
-            "location": "Valencia, España",
-            "desc": "Exclusiva vivienda completamente reformada con acabados de primera calidad, diseño minimalista e iluminación natural óptima en todas sus estancias.",
-            "price": "485.000 €",
-            "youtube_url": "https://www.youtube.com/embed/dQw4w9WgXcQ",
-            "client_password": "nala0711",
-            "views": 0,
-            "photos": []
+DATA_FILE = "propiedades.json"
+WHATSAPP_NUMBER = "34637128212"
+
+# -----------------------------------------------------------------------------
+# FUNCIONES AUXILIARES
+# -----------------------------------------------------------------------------
+def image_to_base64(image_file):
+    img = Image.open(image_file)
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    img.thumbnail((1600, 1200))
+    buffered = io.BytesIO()
+    img.save(buffered, format="JPEG", quality=85)
+    return base64.b64encode(buffered.getvalue()).decode()
+
+def cargar_datos():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            # Asegurar compatibilidad si propiedades antiguas no tienen "usuarios"
+            for prop_id, prop_info in data["propiedades"].items():
+                if "portada" not in prop_info:
+                    prop_info["portada"] = ""
+                if "usuarios" not in prop_info:
+                    old_pass = prop_info.get("password_cliente", "Cliente2026")
+                    prop_info["usuarios"] = {
+                        "cliente_principal": {"password": old_pass, "visitas": 0}
+                    }
+                    if "password_cliente" in prop_info:
+                        del prop_info["password_cliente"]
+            return data
+            
+    return {
+        "propiedades": {
+            "vivienda-01": {
+                "titulo_es": "Ático / Dúplex de Lujo",
+                "titulo_en": "Luxury Penthouse / Duplex",
+                "ubicacion": "Valencia, España",
+                "precio": "485.000 €",
+                "superficie": "180 m²",
+                "habitaciones": "3",
+                "banos": "2",
+                "descripcion_es": "Exclusiva vivienda reformada con acabados de primera calidad, diseño minimalista e iluminación natural óptima en todas sus estancias.",
+                "descripcion_en": "Exclusive fully renovated property with top-quality finishes, minimalist design, and optimal natural light throughout.",
+                "video_url": "https://www.youtube.com/embed/dQw4w9WgXcQ",
+                "portada": "",
+                "usuarios": {
+                    "cliente_principal": {"password": "Cliente2026", "visitas": 0}
+                },
+                "imagenes": []
+            }
+        },
+        "admin_password": "Admin2026Password"
+    }
+
+def guardar_datos(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+db = cargar_datos()
+
+# -----------------------------------------------------------------------------
+# COMPONENTE GALERÍA
+# -----------------------------------------------------------------------------
+def render_galeria(imagenes, is_es=True, height=480):
+    imgs_json = json.dumps(imagenes)
+    expand_txt = "🔍 Ampliar Foto" if is_es else "🔍 Enlarge Photo"
+    close_txt = "✖ Cerrar" if is_es else "✖ Close"
+    
+    html_code = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <style>
+      * {{ box-sizing: border-box; }}
+      html, body {{ 
+        margin: 0; padding: 0; width: 100%; height: 100%;
+        background-color: #0f1115; font-family: system-ui, -apple-system, sans-serif; 
+        color: #f3f4f6; overflow: hidden; touch-action: manipulation; 
+      }}
+      .gallery-container {{
+        position: relative; width: 100%; height: 100vh; max-height: 480px;
+        margin: 0 auto; background: #0f1115; border-radius: 10px; overflow: hidden;
+        display: flex; align-items: center; justify-content: center; user-select: none;
+      }}
+      .img-wrapper {{
+        width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #0f1115;
+      }}
+      .img-wrapper img {{
+        max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain;
+      }}
+      .click-zone {{
+        position: absolute; top: 0; height: 100%; width: 30%; cursor: pointer; display: flex; align-items: center; z-index: 5;
+      }}
+      .click-zone-left {{ left: 0; justify-content: flex-start; padding-left: 10px; }}
+      .click-zone-right {{ right: 0; justify-content: flex-end; padding-right: 10px; }}
+      .arrow-btn {{
+        background: rgba(15, 17, 21, 0.75); color: #c5a880; font-size: 20px; font-weight: bold;
+        width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        border: 1px solid #c5a880; opacity: 0.85;
+      }}
+      .bottom-bar {{
+        position: absolute; bottom: 12px; left: 0; right: 0; display: flex; justify-content: center; align-items: center; gap: 10px; z-index: 6;
+      }}
+      .counter-badge {{
+        background: rgba(15, 17, 21, 0.85); color: #c5a880; padding: 5px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; border: 1px solid #c5a880;
+      }}
+      .expand-btn {{
+        background: rgba(197, 168, 128, 0.95); color: #0f1115; padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; border: 1px solid #c5a880; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      }}
+    </style>
+    </head>
+    <body>
+      <div class="gallery-container">
+        <div class="img-wrapper">
+          <img id="slide" src="" alt="Galería" onclick="openModal()" style="cursor: zoom-in;">
+        </div>
+        <div class="click-zone click-zone-left" onclick="prevSlide(event)"><div class="arrow-btn">&#10094;</div></div>
+        <div class="click-zone click-zone-right" onclick="nextSlide(event)"><div class="arrow-btn">&#10095;</div></div>
+        <div class="bottom-bar">
+          <div id="badge" class="counter-badge">1/1</div>
+          <button class="expand-btn" onclick="openModal()">{expand_txt}</button>
+        </div>
+      </div>
+      <script>
+        const photos = {imgs_json};
+        let current = 0;
+        function getTargetDoc() {{
+          try {{ if (window.top && window.top.document && window.top.document.body) return window.top.document; }} catch(e) {{}}
+          return document;
+        }}
+        function render() {{
+          if (photos.length === 0) return;
+          const src = "data:image/jpeg;base64," + photos[current];
+          document.getElementById('slide').src = src;
+          const label = (current + 1) + "/" + photos.length;
+          document.getElementById('badge').innerText = label;
+          const doc = getTargetDoc();
+          const modalImg = doc.getElementById('ghs-modal-img');
+          const modalBadge = doc.getElementById('ghs-modal-badge');
+          if (modalImg) modalImg.src = src;
+          if (modalBadge) modalBadge.innerText = label;
+        }}
+        function nextSlide(e) {{ if(e) e.stopPropagation(); current = (current + 1) % photos.length; render(); }}
+        function prevSlide(e) {{ if(e) e.stopPropagation(); current = (current - 1 + photos.length) % photos.length; render(); }}
+        function openModal() {{
+          if (photos.length === 0) return;
+          const doc = getTargetDoc();
+          let overlay = doc.getElementById('ghs-mobile-fullscreen-modal');
+          if (!overlay) {{
+            overlay = doc.createElement('div');
+            overlay.id = 'ghs-mobile-fullscreen-modal';
+            overlay.style.cssText = 'position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; background-color: #000000 !important; z-index: 2147483647 !important; display: flex !important; align-items: center !important; justify-content: center !important;';
+            overlay.innerHTML = `
+              <button id="ghs-modal-close" style="position: absolute; top: 20px; right: 20px; background: rgba(197, 168, 128, 0.95); color: #0f1115; border: none; padding: 10px 20px; border-radius: 20px; font-weight: bold; cursor: pointer; z-index: 2147483647;">{close_txt}</button>
+              <div id="ghs-modal-prev" style="position: absolute; top: 50%; left: 15px; transform: translateY(-50%); background: rgba(15, 17, 21, 0.85); color: #c5a880; border: 1px solid #c5a880; width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2147483647;">&#10094;</div>
+              <img id="ghs-modal-img" src="" style="width: 100vw; height: 100vh; object-fit: contain; background: #000;">
+              <div id="ghs-modal-next" style="position: absolute; top: 50%; right: 15px; transform: translateY(-50%); background: rgba(15, 17, 21, 0.85); color: #c5a880; border: 1px solid #c5a880; width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2147483647;">&#10095;</div>
+              <div id="ghs-modal-badge" style="position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%); background: rgba(15, 17, 21, 0.85); color: #c5a880; padding: 6px 18px; border-radius: 20px; font-weight: bold; border: 1px solid #c5a880; z-index: 2147483647;">1/1</div>
+            `;
+            doc.body.appendChild(overlay);
+            doc.getElementById('ghs-modal-close').onclick = closeModal;
+            doc.getElementById('ghs-modal-prev').onclick = (e) => prevSlide(e);
+            doc.getElementById('ghs-modal-next').onclick = (e) => nextSlide(e);
+          }}
+          overlay.style.display = 'flex';
+          render();
+        }}
+        function closeModal() {{
+          const doc = getTargetDoc();
+          const overlay = doc.getElementById('ghs-mobile-fullscreen-modal');
+          if (overlay) overlay.style.display = 'none';
+        }}
+        render();
+      </script>
+    </body>
+    </html>
+    """
+    components.html(html_code, height=height)
+
+# -----------------------------------------------------------------------------
+# CONTROL DE SESIÓN PARA CLIENTE
+# -----------------------------------------------------------------------------
+if 'auth_client_user' not in st.session_state:
+    st.session_state.auth_client_user = None
+
+# -----------------------------------------------------------------------------
+# APLICACIÓN PRINCIPAL CON SEGURIDAD ESTRICTA
+# -----------------------------------------------------------------------------
+st.sidebar.title("🚪 Navegación")
+modo = st.sidebar.radio("Modo de Acceso", ["Vista Cliente", "Panel de Administración (Crear/Editar)"])
+st.sidebar.markdown("---")
+
+if modo == "Vista Cliente":
+    lang = st.sidebar.selectbox("🌐 Idioma / Language", ["Español 🇪🇸", "English 🇬🇧"])
+    is_es = "Español" in lang
+
+    prop_keys = list(db["propiedades"].keys())
+    if prop_keys:
+        prop_sel = st.sidebar.selectbox("Selecciona la Propiedad", prop_keys)
+        prop_data = db["propiedades"][prop_sel]
+
+        # -----------------------------------------------------------------
+        # PORTADA PRIVADA DE LA VIVIENDA + ACCESO POR CONTRASEÑA
+        # La portada cambia automáticamente según la vivienda seleccionada.
+        # -----------------------------------------------------------------
+        usuarios_dict = prop_data.get("usuarios", {})
+        user_names = list(usuarios_dict.keys())
+
+        # Si se cambia de vivienda, se cierra automáticamente la sesión anterior.
+        if st.session_state.get("auth_client_property") != prop_sel:
+            st.session_state.auth_client_user = None
+            st.session_state.auth_client_property = prop_sel
+
+        portada_b64 = prop_data.get("portada", "")
+        titulo_portada = prop_data["titulo_es"] if is_es else prop_data["titulo_en"]
+
+        st.markdown("""
+        <style>
+        .cover-shell {
+            position: relative;
+            width: 100%;
+            min-height: 72vh;
+            border-radius: 18px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px auto;
+            background: #15171c;
+            border: 1px solid rgba(197,168,128,.35);
+            box-shadow: 0 20px 60px rgba(0,0,0,.45);
         }
-    ]
+        .cover-image {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            filter: brightness(.48);
+        }
+        .cover-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(
+                180deg,
+                rgba(15,17,21,.18) 0%,
+                rgba(15,17,21,.52) 55%,
+                rgba(15,17,21,.92) 100%
+            );
+        }
+        .cover-content {
+            position: relative;
+            z-index: 2;
+            width: min(680px, 90%);
+            text-align: center;
+            padding: 42px 28px;
+        }
+        .cover-kicker {
+            color: #c5a880;
+            font-size: 13px;
+            letter-spacing: 4px;
+            text-transform: uppercase;
+            font-weight: 700;
+            margin-bottom: 18px;
+        }
+        .cover-title {
+            color: #ffffff !important;
+            font-size: clamp(30px, 5vw, 58px);
+            line-height: 1.08;
+            margin: 0 0 12px 0;
+            font-weight: 700;
+        }
+        .cover-location {
+            color: #e5e7eb;
+            font-size: 17px;
+            margin-bottom: 28px;
+        }
+        .cover-lock {
+            color: #c5a880;
+            font-size: 42px;
+            margin-bottom: 12px;
+        }
+        .login-card {
+            background: rgba(15,17,21,.88);
+            border: 1px solid rgba(197,168,128,.55);
+            border-radius: 14px;
+            padding: 24px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 15px 45px rgba(0,0,0,.4);
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
-if "auth_role" not in st.session_state:
-    st.session_state.auth_role = None  # Puede ser "admin" o "client"
-if "current_property_id" not in st.session_state:
-    st.session_state.current_property_id = None
+        if portada_b64:
+            cover_src = "data:image/jpeg;base64," + portada_b64
+            cover_img_html = f'<img class="cover-image" src="{cover_src}" alt="Portada de la vivienda">'
+        else:
+            cover_img_html = '<div class="cover-image" style="background: linear-gradient(135deg,#252a31,#0f1115);"></div>'
 
-# Función auxiliar para convertir enlaces comunes de YouTube a formato embed
-def format_youtube_embed(url):
-    if "embed/" in url:
-        return url
-    if "watch?v=" in url:
-        video_id = url.split("watch?v=")[1].split("&")[0]
-        return f"https://www.youtube.com/embed/{video_id}"
-    if "youtu.be/" in url:
-        video_id = url.split("youtu.be/")[1].split("?")[0]
-        return f"https://www.youtube.com/embed/{video_id}"
-    return url
+        st.markdown(f"""
+        <div class="cover-shell">
+            {cover_img_html}
+            <div class="cover-overlay"></div>
+            <div class="cover-content">
+                <div class="cover-kicker">DOSSIER INMOBILIARIO PRIVADO</div>
+                <h1 class="cover-title">{titulo_portada}</h1>
+                <div class="cover-location">📍 {prop_data['ubicacion']}</div>
+                <div class="cover-lock">🔒</div>
+                <div class="login-card">
+        """, unsafe_allow_html=True)
 
-# ==========================================
-# PANTALLA DE ACCESO (LOGIN)
-# ==========================================
-if st.session_state.auth_role is None:
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown("### 🔐 Acceso al Dossier Privado")
-        st.write("Ingrese su contraseña de cliente o la contraseña de administrador (`nala0711`).")
-        entered_password = st.text_input("Contraseña de acceso:", type="password")
-        
-        if st.button("Ingresar", use_container_width=True):
-            if entered_password == "nala0711":
-                st.session_state.auth_role = "admin"
-                st.rerun()
-            else:
-                # Comprobar si la contraseña coincide con alguna propiedad de cliente
-                matched_prop = None
-                for prop in st.session_state.properties:
-                    if prop["client_password"] == entered_password:
-                        matched_prop = prop
-                        break
-                
-                if matched_prop:
-                    st.session_state.auth_role = "client"
-                    st.session_state.current_property_id = matched_prop["id"]
-                    matched_prop["views"] += 1  # Incrementa el contador de visitas
+        if user_names:
+            selected_user = st.selectbox(
+                "Cliente / Usuario",
+                user_names,
+                key=f"client_user_{prop_sel}"
+            )
+            pass_input = st.text_input(
+                "Introduce tu contraseña",
+                type="password",
+                key=f"client_pass_{prop_sel}_{selected_user}"
+            )
+
+            if st.button(
+                "🔓 ENTRAR AL DOSSIER",
+                use_container_width=True,
+                key=f"login_{prop_sel}_{selected_user}"
+            ):
+                if pass_input == usuarios_dict[selected_user]["password"]:
+                    usuarios_dict[selected_user]["visitas"] += 1
+                    guardar_datos(db)
+                    st.session_state.auth_client_user = selected_user
+                    st.session_state.auth_client_property = prop_sel
                     st.rerun()
                 else:
-                    st.error("Contraseña incorrecta. Verifique sus datos.")
-    st.stop()
-
-# ==========================================
-# PANEL DE ADMINISTRADOR
-# ==========================================
-if st.session_state.auth_role == "admin":
-    st.sidebar.markdown("### 🛠️ Menú Administrador")
-    admin_menu = st.sidebar.radio("Opciones", ["Crear Propiedad", "Gestionar / Ver Propiedades", "Estadísticas de Visitas"])
-    
-    st.sidebar.markdown("---")
-    if st.sidebar.button("Cerrar Sesión"):
-        st.session_state.auth_role = None
-        st.rerun()
-
-    if admin_menu == "Crear Propiedad":
-        st.title("➕ Crear Nueva Propiedad")
-        with st.form("create_property_form"):
-            new_title = st.text_input("Título de la Propiedad")
-            new_location = st.text_input("Ubicación")
-            new_price = st.text_input("Precio de Venta (ej: 550.000 €)")
-            new_desc = st.text_area("Descripción detallada del inmueble")
-            new_youtube = st.text_input("URL del vídeo de YouTube")
-            new_client_pwd = st.text_input("Contraseña de acceso para los clientes de esta propiedad", value="nala0711")
-            
-            st.write("📷 **Subir Fotografías desde el Ordenador** (Máximo 23 fotos)")
-            uploaded_files = st.file_uploader("Seleccionar imágenes", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-            
-            submit_btn = st.form_submit_button("Guardar y Crear Propiedad")
-            if submit_btn:
-                if not new_title:
-                    st.error("El título de la propiedad es obligatorio.")
-                else:
-                    new_id = len(st.session_state.properties) + 1
-                    photos_list = []
-                    if uploaded_files:
-                        for file in uploaded_files[:23]:
-                            img = Image.open(file)
-                            photos_list.append(img)
-                            
-                    st.session_state.properties.append({
-                        "id": new_id,
-                        "title": new_title,
-                        "location": new_location,
-                        "desc": new_desc,
-                        "price": new_price,
-                        "youtube_url": new_youtube,
-                        "client_password": new_client_pwd,
-                        "views": 0,
-                        "photos": photos_list
-                    })
-                    st.success(f"¡Propiedad '{new_title}' creada con éxito!")
-
-    elif admin_menu == "Gestionar / Ver Propiedades":
-        st.title("📋 Gestión de Propiedades Existentes")
-        for i, prop in enumerate(st.session_state.properties):
-            with st.expander(f"Propiedad #{prop['id']}: {prop['title']} (Contraseña: {prop['client_password']})"):
-                with st.form(f"edit_form_{prop['id']}"):
-                    e_title = st.text_input("Título", value=prop["title"], key=f"et_{i}")
-                    e_location = st.text_input("Ubicación", value=prop["location"], key=f"el_{i}")
-                    e_price = st.text_input("Precio", value=prop["price"], key=f"ep_{i}")
-                    e_desc = st.text_area("Descripción", value=prop["desc"], key=f"ed_{i}")
-                    e_youtube = st.text_input("URL YouTube", value=prop["youtube_url"], key=f"ey_{i}")
-                    e_pwd = st.text_input("Contraseña de Cliente", value=prop["client_password"], key=f"epwd_{i}")
-                    
-                    st.write(f"Fotos actuales: {len(prop['photos'])}. Puede subir nuevas para actualizar:")
-                    e_files = st.file_uploader("Subir nuevas fotos (máx 23)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=f"ef_{i}")
-                    
-                    save_changes = st.form_submit_button("Actualizar Propiedad")
-                    if save_changes:
-                        prop["title"] = e_title
-                        prop["location"] = e_location
-                        prop["price"] = e_price
-                        prop["desc"] = e_desc
-                        prop["youtube_url"] = e_youtube
-                        prop["client_password"] = e_pwd
-                        if e_files:
-                            prop["photos"] = [Image.open(f) for f in e_files[:23]]
-                        st.success("¡Propiedad actualizada correctamente!")
-
-    elif admin_menu == "Estadísticas de Visitas":
-        st.title("📊 Contador de Visitas por Propiedad")
-        for prop in st.session_state.properties:
-            st.markdown(f"""
-            <div style="background-color: var(--card-bg); padding: 20px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 15px;">
-                <h3>🏠 {prop['title']}</h3>
-                <p><b>Ubicación:</b> {prop['location']}</p>
-                <p><b>Contraseña asignada:</b> <code>{prop['client_password']}</code></p>
-                <p style="color: var(--accent-color); font-size: 1.3rem; margin-top: 10px;">👁️ <b>Visitas registradas:</b> {prop['views']}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-# ==========================================
-# VISTA DE CLIENTE (DOSSIER PRIVADO)
-# ==========================================
-elif st.session_state.auth_role == "client":
-    prop = next((p for p in st.session_state.properties if p["id"] == st.session_state.current_property_id), None)
-    
-    if not prop:
-        st.error("No se encontró la propiedad asociada.")
-        if st.button("Volver"):
-            st.session_state.auth_role = None
-            st.rerun()
-    else:
-        if st.sidebar.button("Cerrar Sesión"):
-            st.session_state.auth_role = None
-            st.session_state.current_property_id = None
-            st.rerun()
-
-        st.markdown('<span class="tag-private">Dossier Privado</span>', unsafe_allow_html=True)
-        st.title(prop["title"])
-        st.markdown(f"<p style='color: var(--text-muted); font-size: 1.1rem;'>📍 {prop['location']}</p>", unsafe_allow_html=True)
-
-        # Galería principal (Muestra las primeras fotos o ejemplos si no hay suficientes)
-        col_main, col_side = st.columns([2, 1])
-        with col_main:
-            if len(prop["photos"]) > 0:
-                st.image(prop["photos"][0], use_container_width=True, caption="Vista Principal")
-            else:
-                st.image("https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80", use_container_width=True, caption="Vista Principal")
-        with col_side:
-            if len(prop["photos"]) > 1:
-                st.image(prop["photos"][1], use_container_width=True, caption="Interior")
-            else:
-                st.image("https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=800&q=80", use_container_width=True, caption="Interior")
-            if len(prop["photos"]) > 2:
-                st.image(prop["photos"][2], use_container_width=True, caption="Terraza")
-            else:
-                st.image("https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=800&q=80", use_container_width=True, caption="Terraza")
-
-        st.markdown("---")
-
-        # Apartado de Video de YouTube de la propiedad
-        if prop["youtube_url"]:
-            st.subheader("🎥 Recorrido en Vídeo")
-            embed_url = format_youtube_embed(prop["youtube_url"])
-            st.markdown(f"""
-            <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 16px; background-color: var(--card-bg); border: 1px solid var(--border-color);">
-                <iframe src="{embed_url}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;" allowfullscreen></iframe>
-            </div>
-            """, unsafe_allow_html=True)
-            st.markdown("---")
-
-        # Apartado de Descripción detallada
-        st.subheader("📝 Descripción del Inmueble")
-        st.write(prop["desc"])
-
-        st.markdown("---")
-
-        # Galería Completa (Soporta hasta 23 fotos subidas)
-        st.subheader(f"📸 Galería Completa ({len(prop['photos'])} Fotografías)")
-        if len(prop["photos"]) > 0:
-            gallery_cols = st.columns(3)
-            for idx, photo in enumerate(prop["photos"]):
-                with gallery_cols[idx % 3]:
-                    st.image(photo, use_container_width=True, caption=f"Foto {idx + 1}")
+                    st.error("Contraseña incorrecta. Acceso denegado.")
         else:
-            st.info("No hay fotografías adicionales cargadas en este dossier.")
+            st.warning("No hay usuarios configurados para esta propiedad.")
 
-        st.markdown("---")
-
-        # Especificaciones y Precio
-        col_details, col_price = st.columns([2, 1])
-
-        with col_details:
-            st.subheader("⚙️ Especificaciones Técnicas")
-            st.markdown("""
-            * **Superficie:** 180 m²
-            * **Habitaciones:** 3
-            * **Baños:** 2
-            * **Eficiencia Energética:** A+
-            * **Estado:** Reformado a estrenar
-            * **Planta:** 5ª Exterior con ascensor
-            * **Orientación:** Sur / Sureste
-            """)
-
-        with col_price:
-            st.markdown(f"""
-            <div class="price-card">
-                <div style="font-size: 0.9rem; color: var(--text-muted); text-transform: uppercase;">Precio de Venta</div>
-                <div class="price-amount">{prop['price']}</div>
-                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 15px;">Impuestos y gastos no incluidos</div>
-                <a href="https://wa.me/34000000000?text=Hola,%20estoy%20interesado%20en%20consultar%20sobre%20esta%20propiedad" class="btn-contact" target="_blank">
-                    Solicitar Información / Visita
-                </a>
+        st.markdown("""
+                </div>
             </div>
-            """, unsafe_allow_html=True)
+        </div>
+        """, unsafe_allow_html=True)
+
+        # El dossier solamente aparece después de introducir la contraseña correcta.
+        if user_names and (
+            st.session_state.auth_client_user == selected_user
+            and st.session_state.get("auth_client_property") == prop_sel
+        ):
+            st.success(f"Sesión activa para: **{selected_user}**")
+            st.markdown("---")
+    else:
+        st.info("No hay propiedades disponibles.")
+
+elif modo == "Panel de Administración (Crear/Editar)":
+    st.title("🛠️ Panel de Control - Administración")
+    
+    admin_pass = st.text_input("Contraseña exclusiva de Administrador:", type="password")
+    
+    if admin_pass == db["admin_password"]:
+        st.success("Sesión de administrador activa.")
+        
+        tab1, tab2, tab3 = st.tabs(["Editar Propiedad", "Control de Usuarios y Visitas", "Crear Nueva Propiedad"])
+
+        with tab1:
+            prop_keys = list(db["propiedades"].keys())
+            if prop_keys:
+                prop_edit = st.selectbox("Seleccionar Inmueble para Modificar:", prop_keys, key="edit_prop_select")
+                p_data = db["propiedades"][prop_edit]
+
+                st.subheader("🖼️ Portada de Acceso del Cliente")
+                st.caption("Esta imagen será la portada que verá el cliente antes de introducir su contraseña. Cada vivienda puede tener una portada diferente.")
+
+                if "portada" not in p_data:
+                    p_data["portada"] = ""
+
+                if p_data["portada"]:
+                    portada_bytes = base64.b64decode(p_data["portada"])
+                    st.image(
+                        portada_bytes,
+                        caption="Portada actual de esta vivienda",
+                        use_container_width=True
+                    )
+
+                nueva_portada = st.file_uploader(
+                    "Seleccionar / reemplazar portada (JPG, PNG o WEBP)",
+                    type=["jpg", "jpeg", "png", "webp"],
+                    accept_multiple_files=False,
+                    key=f"cover_upload_{prop_edit}"
+                )
+
+                if nueva_portada:
+                    if st.button(
+                        "⭐ Guardar esta imagen como Portada",
+                        key=f"save_cover_{prop_edit}"
+                    ):
+                        p_data["portada"] = image_to_base64(nueva_portada)
+                        guardar_datos(db)
+                        st.success("Portada guardada correctamente para esta vivienda.")
+                        st.rerun()
+
+                st.markdown("---")
+                st.subheader("📸 Gestión de Fotografías")
+                if "imagenes" not in p_data:
+                    p_data["imagenes"] = []
+                
+                if p_data["imagenes"]:
+                    grid_cols = st.columns(4)
+                    for i, img_b64 in enumerate(p_data["imagenes"]):
+                        img_bytes = base64.b64decode(img_b64)
+                        grid_cols[i % 4].image(img_bytes, use_container_width=True)
+                        
+                        if i == 0:
+                            grid_cols[i % 4].info("⭐ Principal")
+                        else:
+                            if grid_cols[i % 4].button(f"⭐ Fijar como 1ª", key=f"main_{prop_edit}_{i}"):
+                                p_data["imagenes"].insert(0, p_data["imagenes"].pop(i))
+                                guardar_datos(db)
+                                st.rerun()
+
+                        if grid_cols[i % 4].button(f"🗑️ Eliminar #{i+1}", key=f"del_{prop_edit}_{i}"):
+                            p_data["imagenes"].pop(i)
+                            guardar_datos(db)
+                            st.rerun()
+
+                nuevas_fotos = st.file_uploader(
+                    "Añadir nuevas imágenes (JPG, PNG, WEBP)", 
+                    type=["jpg", "jpeg", "png", "webp"], 
+                    accept_multiple_files=True
+                )
+                
+                if nuevas_fotos:
+                    if st.button("⬆️ Subir e Integrar Fotos"):
+                        for f in nuevas_fotos:
+                            b64_str = image_to_base64(f)
+                            p_data["imagenes"].append(b64_str)
+                        guardar_datos(db)
+                        st.success(f"¡{len(nuevas_fotos)} fotos añadidas correctamente!")
+                        st.rerun()
+
+                st.markdown("---")
+
+                with st.form("edit_form"):
+                    st.subheader("📝 Datos del Inmueble")
+                    col_a, col_b = st.columns(2)
+                    p_data["titulo_es"] = col_a.text_input("Título (ES)", p_data["titulo_es"])
+                    p_data["titulo_en"] = col_b.text_input("Título (EN)", p_data["titulo_en"])
+
+                    p_data["precio"] = col_a.text_input("Precio", p_data["precio"])
+                    p_data["ubicacion"] = col_b.text_input("Ubicación", p_data["ubicacion"])
+
+                    p_data["superficie"] = col_a.text_input("Superficie", p_data["superficie"])
+                    p_data["habitaciones"] = col_a.text_input("Habitaciones", p_data["habitaciones"])
+                    p_data["banos"] = col_b.text_input("Baños", p_data["banos"])
+
+                    p_data["descripcion_es"] = st.text_area("Descripción (ES)", p_data["descripcion_es"])
+                    p_data["descripcion_en"] = st.text_area("Descripción (EN)", p_data["descripcion_en"])
+
+                    p_data["video_url"] = st.text_input("URL del Vídeo (YouTube/Vimeo/MP4)", p_data.get("video_url", ""))
+
+                    submitted = st.form_submit_button("💾 Guardar Datos y Textos")
+                    if submitted:
+                        guardar_datos(db)
+                        st.toast("¡Datos del inmueble guardados!")
+
+        with tab2:
+            st.subheader("👥 Gestión de Contraseñas de Usuario y Contador de Visitas")
+            prop_users_key = st.selectbox("Seleccionar Inmueble para ver usuarios:", list(db["propiedades"].keys()), key="users_prop_select")
+            u_data = db["propiedades"][prop_users_key]
+
+            if "usuarios" not in u_data:
+                u_data["usuarios"] = {}
+
+            st.write("### Usuarios Actuales y Visitas Registradas")
+            if u_data["usuarios"]:
+                for u_name, u_info in list(u_data["usuarios"].items()):
+                    with st.expander(f"👤 {u_name} — 👁️ {u_info['visitas']} visitas"):
+                        nueva_contra = st.text_input(f"Cambiar contraseña para '{u_name}':", value=u_info["password"], type="password", key=f"pass_{prop_users_key}_{u_name}")
+                        col_u1, col_u2 = st.columns(2)
+                        if col_u1.button(f"Actualizar Clave", key=f"save_{prop_users_key}_{u_name}"):
+                            u_data["usuarios"][u_name]["password"] = nueva_contra
+                            guardar_datos(db)
+                            st.success(f"Contraseña actualizada para {u_name}.")
+                            st.rerun()
+                        if col_u2.button(f"🗑️ Eliminar Usuario", key=f"del_u_{prop_users_key}_{u_name}"):
+                            del u_data["usuarios"][u_name]
+                            guardar_datos(db)
+                            st.warning(f"Usuario {u_name} eliminado.")
+                            st.rerun()
+            else:
+                st.info("No hay usuarios creados para esta propiedad.")
+
+            st.markdown("---")
+            st.subheader("➕ Añadir Nuevo Usuario a esta Propiedad")
+            nuevo_usuario_nombre = st.text_input("Nombre del Usuario / Cliente:")
+            nuevo_usuario_pass = st.text_input("Contraseña Asignada:", type="password", key="new_user_pass_input")
+
+            if st.button("Crear Usuario y Asignar Clave"):
+                if nuevo_usuario_nombre:
+                    if nuevo_usuario_nombre not in u_data["usuarios"]:
+                        u_data["usuarios"][nuevo_usuario_nombre] = {"password": nuevo_usuario_pass, "visitas": 0}
+                        guardar_datos(db)
+                        st.success(f"Usuario '{nuevo_usuario_nombre}' creado con éxito.")
+                        st.rerun()
+                    else:
+                        st.error("Ese nombre de usuario ya existe en esta propiedad.")
+                else:
+                    st.warning("Introduce un nombre de usuario válido.")
+
+        with tab3:
+            st.subheader("Añadir Nueva Propiedad al Portafolio")
+            new_id = st.text_input("Identificador único (ej: piso-gran-via, atico-patacona)")
+            if st.button("Crear Inmueble"):
+                if new_id and new_id not in db["propiedades"]:
+                    db["propiedades"][new_id] = {
+                        "titulo_es": "Nueva Propiedad",
+                        "titulo_en": "New Property",
+                        "ubicacion": "Valencia, España",
+                        "precio": "0 €",
+                        "superficie": "0 m²",
+                        "habitaciones": "0",
+                        "banos": "0",
+                        "descripcion_es": "Descripción...",
+                        "descripcion_en": "Description...",
+                        "video_url": "",
+                        "portada": "",
+                        "usuarios": {
+                            "cliente_inicial": {"password": "1234", "visitas": 0}
+                        },
+                        "imagenes": []
+                    }
+                    guardar_datos(db)
+                    st.success(f"Propiedad '{new_id}' creada correctamente.")
+                    st.rerun()
+                elif new_id in db["propiedades"]:
+                    st.error("Ese identificador ya existe.")
+    elif admin_pass != "":
+        st.error("Clave de administrador incorrecta. Acceso denegado.")
