@@ -1,7 +1,8 @@
 import streamlit as st
+from PIL import Image
 
 # Configuración de página
-st.set_page_config(page_title="Residencia Exclusiva — Dossier Privado", layout="wide")
+st.set_page_config(page_title="Dossier Privado de Propiedades", layout="wide")
 
 # Estilos CSS personalizados (Modo Oscuro Elegante / Lujo)
 st.markdown("""
@@ -59,176 +60,252 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Inicializar estados de la propiedad y autenticación
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-
-if "prop_title" not in st.session_state:
-    st.session_state.prop_title = "Ático / Ático Dúplex de Lujo"
-
-if "prop_location" not in st.session_state:
-    st.session_state.prop_location = "Valencia, España"
-
-if "prop_desc" not in st.session_state:
-    st.session_state.prop_desc = (
-        "Exclusiva vivienda completamente reformada con acabados de primera calidad, "
-        "diseño minimalista e iluminación natural óptima en todas sus estancias. "
-        "Cuenta con una amplia terraza privada, cocina integrada equipada con electrodomésticos "
-        "de gama alta, sistema de climatización por aerotermia y domótica integral."
-    )
-
-if "prop_price" not in st.session_state:
-    st.session_state.prop_price = "485.000 €"
-
-# Inicializar 23 fotos por defecto (pueden ser URLs de imágenes)
-if "photos" not in st.session_state:
-    default_images = [
-        "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80",
-        "https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600585154526-990dced4db0d?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600573472550-8090b5e0745e?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600565193348-f74bd3c7ccdf?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600585152220-90363fe7e115?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600566752355-35792bedcfea?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600585152659-32244a19b8ea?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600607687644-c7171b42498f?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600566753086-2f183fb0b462?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600585154363-67eb9e2e2099?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600573472592-401b489a3cdc?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600565193358-1a84f331005a?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600585152201-f925f68a8607?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600566752431-29ad98270144?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600585152202-799d52528741?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80"
+# Inicializar almacenamiento de propiedades en session_state
+if "properties" not in st.session_state:
+    st.session_state.properties = [
+        {
+            "id": 1,
+            "title": "Ático / Ático Dúplex de Lujo",
+            "location": "Valencia, España",
+            "desc": "Exclusiva vivienda completamente reformada con acabados de primera calidad, diseño minimalista e iluminación natural óptima en todas sus estancias.",
+            "price": "485.000 €",
+            "youtube_url": "https://www.youtube.com/embed/dQw4w9WgXcQ",
+            "client_password": "nala0711",
+            "views": 0,
+            "photos": []
+        }
     ]
-    st.session_state.photos = default_images
 
-# Pantalla de Autenticación con contraseña "danekas"
-if not st.session_state.authenticated:
+if "auth_role" not in st.session_state:
+    st.session_state.auth_role = None  # Puede ser "admin" o "client"
+if "current_property_id" not in st.session_state:
+    st.session_state.current_property_id = None
+
+# Función auxiliar para convertir enlaces comunes de YouTube a formato embed
+def format_youtube_embed(url):
+    if "embed/" in url:
+        return url
+    if "watch?v=" in url:
+        video_id = url.split("watch?v=")[1].split("&")[0]
+        return f"https://www.youtube.com/embed/{video_id}"
+    if "youtu.be/" in url:
+        video_id = url.split("youtu.be/")[1].split("?")[0]
+        return f"https://www.youtube.com/embed/{video_id}"
+    return url
+
+# ==========================================
+# PANTALLA DE ACCESO (LOGIN)
+# ==========================================
+if st.session_state.auth_role is None:
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown("### 🔐 Acceso Restringido - Dossier Privado")
-        password_input = st.text_input("Ingrese la contraseña de acceso:", type="password")
-        if st.button("Acceder", use_container_width=True):
-            if password_input == "danekas":
-                st.session_state.authenticated = True
+        st.markdown("### 🔐 Acceso al Dossier Privado")
+        st.write("Ingrese su contraseña de cliente o la contraseña de administrador (`nala0711`).")
+        entered_password = st.text_input("Contraseña de acceso:", type="password")
+        
+        if st.button("Ingresar", use_container_width=True):
+            if entered_password == "nala0711":
+                st.session_state.auth_role = "admin"
                 st.rerun()
             else:
-                st.error("Contraseña incorrecta. Utilice: danekas")
+                # Comprobar si la contraseña coincide con alguna propiedad de cliente
+                matched_prop = None
+                for prop in st.session_state.properties:
+                    if prop["client_password"] == entered_password:
+                        matched_prop = prop
+                        break
+                
+                if matched_prop:
+                    st.session_state.auth_role = "client"
+                    st.session_state.current_property_id = matched_prop["id"]
+                    matched_prop["views"] += 1  # Incrementa el contador de visitas
+                    st.rerun()
+                else:
+                    st.error("Contraseña incorrecta. Verifique sus datos.")
     st.stop()
-
-# Menú lateral una vez autenticado
-st.sidebar.markdown("### 🧭 Menú de Navegación")
-app_mode = st.sidebar.radio("Seleccione la vista:", ["Vista de Cliente (Dossier)", "Panel de Administrador"])
-
-st.sidebar.markdown("---")
-if st.sidebar.button("Cerrar Sesión"):
-    st.session_state.authenticated = False
-    st.rerun()
-
-# ==========================================
-# VISTA DE CLIENTE (DOSSIER PRIVADO)
-# ==========================================
-if app_mode == "Vista de Cliente (Dossier)":
-    st.markdown('<span class="tag-private">Dossier Privado</span>', unsafe_allow_html=True)
-    st.title(st.session_state.prop_title)
-    st.markdown(f"<p style='color: var(--text-muted); font-size: 1.1rem;'>📍 {st.session_state.prop_location}</p>", unsafe_allow_html=True)
-
-    # Galería Principal (Mostramos la foto principal y dos laterales de ejemplo)
-    col_main, col_side = st.columns([2, 1])
-    with col_main:
-        if len(st.session_state.photos) > 0:
-            st.image(st.session_state.photos[0], use_container_width=True, caption="Vista Principal")
-    with col_side:
-        if len(st.session_state.photos) > 1:
-            st.image(st.session_state.photos[1], use_container_width=True, caption="Interior")
-        if len(st.session_state.photos) > 2:
-            st.image(st.session_state.photos[2], use_container_width=True, caption="Terraza")
-
-    st.markdown("---")
-
-    # Apartado de Descripción de la Propiedad
-    st.subheader("📝 Descripción del Inmueble")
-    st.write(st.session_state.prop_desc)
-
-    st.markdown("---")
-
-    # Galería Completa de las 23 fotos
-    st.subheader("📸 Galería Completa (23 Fotografías)")
-    gallery_cols = st.columns(3)
-    for idx, photo_url in enumerate(st.session_state.photos):
-        with gallery_cols[idx % 3]:
-            if photo_url.startswith("http"):
-                st.image(photo_url, use_container_width=True, caption=f"Foto {idx + 1}")
-
-    st.markdown("---")
-
-    # Detalles clave y precio
-    col_details, col_price = st.columns([2, 1])
-
-    with col_details:
-        st.subheader("⚙️ Especificaciones Técnicas")
-        st.markdown("""
-        * **Superficie:** 180 m²
-        * **Habitaciones:** 3
-        * **Baños:** 2
-        * **Eficiencia Energética:** A+
-        * **Estado:** Reformado a estrenar
-        * **Planta:** 5ª Exterior con ascensor
-        * **Orientación:** Sur / Sureste
-        """)
-
-    with col_price:
-        st.markdown(f"""
-        <div class="price-card">
-            <div style="font-size: 0.9rem; color: var(--text-muted); text-transform: uppercase;">Precio de Venta</div>
-            <div class="price-amount">{st.session_state.prop_price}</div>
-            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 15px;">Impuestos y gastos no incluidos</div>
-            <a href="https://wa.me/34000000000?text=Hola,%20estoy%20interesado%20en%20consultar%20sobre%20el%20Inmueble" class="btn-contact" target="_blank">
-                Solicitar Información / Visita
-            </a>
-        </div>
-        """, unsafe_allow_html=True)
 
 # ==========================================
 # PANEL DE ADMINISTRADOR
 # ==========================================
-elif app_mode == "Panel de Administrador":
-    st.title("🛠️ Panel de Administrador")
-    st.markdown("Modifique los detalles de la propiedad y gestione las **23 fotografías** del dossier.")
+if st.session_state.auth_role == "admin":
+    st.sidebar.markdown("### 🛠️ Menú Administrador")
+    admin_menu = st.sidebar.radio("Opciones", ["Crear Propiedad", "Gestionar / Ver Propiedades", "Estadísticas de Visitas"])
     
-    # Doble seguridad visual opcional en panel
-    admin_pwd = st.text_input("Confirme contraseña de administrador (danekas):", type="password")
+    st.sidebar.markdown("---")
+    if st.sidebar.button("Cerrar Sesión"):
+        st.session_state.auth_role = None
+        st.rerun()
+
+    if admin_menu == "Crear Propiedad":
+        st.title("➕ Crear Nueva Propiedad")
+        with st.form("create_property_form"):
+            new_title = st.text_input("Título de la Propiedad")
+            new_location = st.text_input("Ubicación")
+            new_price = st.text_input("Precio de Venta (ej: 550.000 €)")
+            new_desc = st.text_area("Descripción detallada del inmueble")
+            new_youtube = st.text_input("URL del vídeo de YouTube")
+            new_client_pwd = st.text_input("Contraseña de acceso para los clientes de esta propiedad", value="nala0711")
+            
+            st.write("📷 **Subir Fotografías desde el Ordenador** (Máximo 23 fotos)")
+            uploaded_files = st.file_uploader("Seleccionar imágenes", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+            
+            submit_btn = st.form_submit_button("Guardar y Crear Propiedad")
+            if submit_btn:
+                if not new_title:
+                    st.error("El título de la propiedad es obligatorio.")
+                else:
+                    new_id = len(st.session_state.properties) + 1
+                    photos_list = []
+                    if uploaded_files:
+                        for file in uploaded_files[:23]:
+                            img = Image.open(file)
+                            photos_list.append(img)
+                            
+                    st.session_state.properties.append({
+                        "id": new_id,
+                        "title": new_title,
+                        "location": new_location,
+                        "desc": new_desc,
+                        "price": new_price,
+                        "youtube_url": new_youtube,
+                        "client_password": new_client_pwd,
+                        "views": 0,
+                        "photos": photos_list
+                    })
+                    st.success(f"¡Propiedad '{new_title}' creada con éxito!")
+
+    elif admin_menu == "Gestionar / Ver Propiedades":
+        st.title("📋 Gestión de Propiedades Existentes")
+        for i, prop in enumerate(st.session_state.properties):
+            with st.expander(f"Propiedad #{prop['id']}: {prop['title']} (Contraseña: {prop['client_password']})"):
+                with st.form(f"edit_form_{prop['id']}"):
+                    e_title = st.text_input("Título", value=prop["title"], key=f"et_{i}")
+                    e_location = st.text_input("Ubicación", value=prop["location"], key=f"el_{i}")
+                    e_price = st.text_input("Precio", value=prop["price"], key=f"ep_{i}")
+                    e_desc = st.text_area("Descripción", value=prop["desc"], key=f"ed_{i}")
+                    e_youtube = st.text_input("URL YouTube", value=prop["youtube_url"], key=f"ey_{i}")
+                    e_pwd = st.text_input("Contraseña de Cliente", value=prop["client_password"], key=f"epwd_{i}")
+                    
+                    st.write(f"Fotos actuales: {len(prop['photos'])}. Puede subir nuevas para actualizar:")
+                    e_files = st.file_uploader("Subir nuevas fotos (máx 23)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=f"ef_{i}")
+                    
+                    save_changes = st.form_submit_button("Actualizar Propiedad")
+                    if save_changes:
+                        prop["title"] = e_title
+                        prop["location"] = e_location
+                        prop["price"] = e_price
+                        prop["desc"] = e_desc
+                        prop["youtube_url"] = e_youtube
+                        prop["client_password"] = e_pwd
+                        if e_files:
+                            prop["photos"] = [Image.open(f) for f in e_files[:23]]
+                        st.success("¡Propiedad actualizada correctamente!")
+
+    elif admin_menu == "Estadísticas de Visitas":
+        st.title("📊 Contador de Visitas por Propiedad")
+        for prop in st.session_state.properties:
+            st.markdown(f"""
+            <div style="background-color: var(--card-bg); padding: 20px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 15px;">
+                <h3>🏠 {prop['title']}</h3>
+                <p><b>Ubicación:</b> {prop['location']}</p>
+                <p><b>Contraseña asignada:</b> <code>{prop['client_password']}</code></p>
+                <p style="color: var(--accent-color); font-size: 1.3rem; margin-top: 10px;">👁️ <b>Visitas registradas:</b> {prop['views']}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+# ==========================================
+# VISTA DE CLIENTE (DOSSIER PRIVADO)
+# ==========================================
+elif st.session_state.auth_role == "client":
+    prop = next((p for p in st.session_state.properties if p["id"] == st.session_state.current_property_id), None)
     
-    if admin_pwd == "danekas":
-        st.success("Acceso al panel de control concedido.")
-        
-        with st.form("admin_form"):
-            st.subheader("Información General")
-            st.session_state.prop_title = st.text_input("Título de la Propiedad", value=st.session_state.prop_title)
-            st.session_state.prop_location = st.text_input("Ubicación", value=st.session_state.prop_location)
-            st.session_state.prop_price = st.text_input("Precio de Venta", value=st.session_state.prop_price)
-            
-            st.subheader("Descripción del Inmueble")
-            st.session_state.prop_desc = st.text_area("Texto descriptivo", value=st.session_state.prop_desc, height=150)
-            
-            st.subheader("Gestión de las 23 Fotografías (URLs)")
-            updated_photos = []
-            for i in range(23):
-                current_url = st.session_state.photos[i] if i < len(st.session_state.photos) else ""
-                new_url = st.text_input(f"URL Foto {i + 1}", value=current_url, key=f"photo_input_{i}")
-                updated_photos.append(new_url)
-                
-            submitted = st.form_submit_button("Guardar Cambios")
-            if submitted:
-                st.session_state.photos = updated_photos
-                st.success("¡Cambios guardados correctamente! Ya puede verlos en la vista de cliente.")
-    elif admin_pwd != "":
-        st.error("Contraseña incorrecta para el panel de administración.")
+    if not prop:
+        st.error("No se encontró la propiedad asociada.")
+        if st.button("Volver"):
+            st.session_state.auth_role = None
+            st.rerun()
+    else:
+        if st.sidebar.button("Cerrar Sesión"):
+            st.session_state.auth_role = None
+            st.session_state.current_property_id = None
+            st.rerun()
+
+        st.markdown('<span class="tag-private">Dossier Privado</span>', unsafe_allow_html=True)
+        st.title(prop["title"])
+        st.markdown(f"<p style='color: var(--text-muted); font-size: 1.1rem;'>📍 {prop['location']}</p>", unsafe_allow_html=True)
+
+        # Galería principal (Muestra las primeras fotos o ejemplos si no hay suficientes)
+        col_main, col_side = st.columns([2, 1])
+        with col_main:
+            if len(prop["photos"]) > 0:
+                st.image(prop["photos"][0], use_container_width=True, caption="Vista Principal")
+            else:
+                st.image("https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80", use_container_width=True, caption="Vista Principal")
+        with col_side:
+            if len(prop["photos"]) > 1:
+                st.image(prop["photos"][1], use_container_width=True, caption="Interior")
+            else:
+                st.image("https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=800&q=80", use_container_width=True, caption="Interior")
+            if len(prop["photos"]) > 2:
+                st.image(prop["photos"][2], use_container_width=True, caption="Terraza")
+            else:
+                st.image("https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=800&q=80", use_container_width=True, caption="Terraza")
+
+        st.markdown("---")
+
+        # Apartado de Video de YouTube de la propiedad
+        if prop["youtube_url"]:
+            st.subheader("🎥 Recorrido en Vídeo")
+            embed_url = format_youtube_embed(prop["youtube_url"])
+            st.markdown(f"""
+            <div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 16px; background-color: var(--card-bg); border: 1px solid var(--border-color);">
+                <iframe src="{embed_url}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;" allowfullscreen></iframe>
+            </div>
+            """, unsafe_allow_html=True)
+            st.markdown("---")
+
+        # Apartado de Descripción detallada
+        st.subheader("📝 Descripción del Inmueble")
+        st.write(prop["desc"])
+
+        st.markdown("---")
+
+        # Galería Completa (Soporta hasta 23 fotos subidas)
+        st.subheader(f"📸 Galería Completa ({len(prop['photos'])} Fotografías)")
+        if len(prop["photos"]) > 0:
+            gallery_cols = st.columns(3)
+            for idx, photo in enumerate(prop["photos"]):
+                with gallery_cols[idx % 3]:
+                    st.image(photo, use_container_width=True, caption=f"Foto {idx + 1}")
+        else:
+            st.info("No hay fotografías adicionales cargadas en este dossier.")
+
+        st.markdown("---")
+
+        # Especificaciones y Precio
+        col_details, col_price = st.columns([2, 1])
+
+        with col_details:
+            st.subheader("⚙️ Especificaciones Técnicas")
+            st.markdown("""
+            * **Superficie:** 180 m²
+            * **Habitaciones:** 3
+            * **Baños:** 2
+            * **Eficiencia Energética:** A+
+            * **Estado:** Reformado a estrenar
+            * **Planta:** 5ª Exterior con ascensor
+            * **Orientación:** Sur / Sureste
+            """)
+
+        with col_price:
+            st.markdown(f"""
+            <div class="price-card">
+                <div style="font-size: 0.9rem; color: var(--text-muted); text-transform: uppercase;">Precio de Venta</div>
+                <div class="price-amount">{prop['price']}</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 15px;">Impuestos y gastos no incluidos</div>
+                <a href="https://wa.me/34000000000?text=Hola,%20estoy%20interesado%20en%20consultar%20sobre%20esta%20propiedad" class="btn-contact" target="_blank">
+                    Solicitar Información / Visita
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
