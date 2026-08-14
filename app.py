@@ -278,208 +278,261 @@ def render_galeria(imagenes, is_es=True, height=480):
     """
     components.html(html_code, height=height)
 
+
 # -----------------------------------------------------------------------------
-# CONTROL DE SESIÓN PARA CLIENTE
+# CONTROL DE SESIÓN
 # -----------------------------------------------------------------------------
-if 'auth_client_user' not in st.session_state:
+if "auth_client_user" not in st.session_state:
     st.session_state.auth_client_user = None
 
 # -----------------------------------------------------------------------------
-# APLICACIÓN PRINCIPAL CON SEGURIDAD ESTRICTA
+# UNA CONTRASEÑA POR CLIENTE + VIVIENDAS PERMITIDAS
+# -----------------------------------------------------------------------------
+if "usuarios" not in db or not isinstance(db["usuarios"], dict):
+    db["usuarios"] = {}
+
+if "cliente_principal" not in db["usuarios"]:
+    db["usuarios"]["cliente_principal"] = {
+        "password": "nala0711",
+        "propiedades_permitidas": list(db.get("propiedades", {}).keys())
+    }
+    guardar_datos(db)
+
+for u_name, u_info in db["usuarios"].items():
+    if not u_info.get("password"):
+        u_info["password"] = "nala0711"
+    if "propiedades_permitidas" not in u_info:
+        u_info["propiedades_permitidas"] = list(db.get("propiedades", {}).keys())
+guardar_datos(db)
+
+# -----------------------------------------------------------------------------
+# NAVEGACIÓN
 # -----------------------------------------------------------------------------
 st.sidebar.title("🚪 Navegación")
-modo = st.sidebar.radio("Modo de Acceso", ["Vista Cliente", "Panel de Administración (Crear/Editar)"])
+modo = st.sidebar.radio(
+    "Modo de Acceso",
+    ["Vista Cliente", "Panel de Administración (Crear/Editar)"]
+)
 st.sidebar.markdown("---")
 
+# =============================================================================
+# VISTA CLIENTE
+# =============================================================================
 if modo == "Vista Cliente":
-    lang = st.sidebar.selectbox("🌐 Idioma / Language", ["Español 🇪🇸", "English 🇬🇧"])
+    lang = st.sidebar.selectbox(
+        "🌐 Idioma / Language",
+        ["Español 🇪🇸", "English 🇬🇧"]
+    )
     is_es = "Español" in lang
 
-    prop_keys = list(db["propiedades"].keys())
-    if prop_keys:
-        prop_sel = st.sidebar.selectbox("Selecciona la Propiedad", prop_keys)
-        prop_data = db["propiedades"][prop_sel]
-
-        # -----------------------------------------------------------------
-        # PORTADA PRIVADA DE LA VIVIENDA + ACCESO POR CONTRASEÑA
-        # La portada cambia automáticamente según la vivienda seleccionada.
-        # -----------------------------------------------------------------
-        usuarios_dict = prop_data.get("usuarios", {})
-        user_names = list(usuarios_dict.keys())
-
-        # Si se cambia de vivienda, se cierra automáticamente la sesión anterior.
-        if st.session_state.get("auth_client_property") != prop_sel:
-            st.session_state.auth_client_user = None
-            st.session_state.auth_client_property = prop_sel
-
-        portada_b64 = prop_data.get("portada", "")
-        titulo_portada = prop_data["titulo_es"] if is_es else prop_data["titulo_en"]
-
+    # UN SOLO CAMPO DE CONTRASEÑA. NO SELECCIONA VIVIENDA NI USUARIO.
+    if not st.session_state.auth_client_user:
         st.markdown("""
         <style>
-        .cover-shell {
-            position: relative;
-            width: 100%;
-            min-height: 72vh;
-            border-radius: 18px;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 24px auto;
-            background: #15171c;
-            border: 1px solid rgba(197,168,128,.35);
-            box-shadow: 0 20px 60px rgba(0,0,0,.45);
+        .login-wrap {
+            min-height:72vh; display:flex; align-items:center;
+            justify-content:center; padding:30px 10px;
         }
-        .cover-image {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            filter: brightness(.48);
+        .login-box {
+            width:min(620px,94vw); padding:48px 42px; text-align:center;
+            background:rgba(15,17,21,.96);
+            border:1px solid rgba(197,168,128,.55); border-radius:18px;
+            box-shadow:0 20px 60px rgba(0,0,0,.45);
         }
-        .cover-overlay {
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(
-                180deg,
-                rgba(15,17,21,.18) 0%,
-                rgba(15,17,21,.52) 55%,
-                rgba(15,17,21,.92) 100%
-            );
+        .login-kicker {
+            color:#c5a880; font-size:13px; letter-spacing:4px;
+            font-weight:700; margin-bottom:20px;
         }
-        .cover-content {
-            position: relative;
-            z-index: 2;
-            width: min(680px, 90%);
-            text-align: center;
-            padding: 42px 28px;
-        }
-        .cover-kicker {
-            color: #c5a880;
-            font-size: 13px;
-            letter-spacing: 4px;
-            text-transform: uppercase;
-            font-weight: 700;
-            margin-bottom: 18px;
-        }
-        .cover-title {
-            color: #ffffff !important;
-            font-size: clamp(30px, 5vw, 58px);
-            line-height: 1.08;
-            margin: 0 0 12px 0;
-            font-weight: 700;
-        }
-        .cover-location {
-            color: #e5e7eb;
-            font-size: 17px;
-            margin-bottom: 28px;
-        }
-        .cover-lock {
-            color: #c5a880;
-            font-size: 42px;
-            margin-bottom: 12px;
-        }
-        .login-card {
-            background: rgba(15,17,21,.88);
-            border: 1px solid rgba(197,168,128,.55);
-            border-radius: 14px;
-            padding: 24px;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 15px 45px rgba(0,0,0,.4);
-        }
+        .login-title { color:#fff !important; font-size:42px; margin:0 0 12px; }
+        .login-subtitle { color:#d1d5db; margin-bottom:28px; }
+        .login-lock { font-size:42px; margin-bottom:18px; }
         </style>
-        """, unsafe_allow_html=True)
-
-        if portada_b64:
-            cover_src = "data:image/jpeg;base64," + portada_b64
-            cover_img_html = f'<img class="cover-image" src="{cover_src}" alt="Portada de la vivienda">'
-        else:
-            cover_img_html = '<div class="cover-image" style="background: linear-gradient(135deg,#252a31,#0f1115);"></div>'
-
-        st.markdown(f"""
-        <div class="cover-shell">
-            {cover_img_html}
-            <div class="cover-overlay"></div>
-            <div class="cover-content">
-                <div class="cover-kicker">DOSSIER INMOBILIARIO PRIVADO</div>
-                <h1 class="cover-title">{titulo_portada}</h1>
-                <div class="cover-location">📍 {prop_data['ubicacion']}</div>
-                <div class="cover-lock">🔒</div>
-                <div class="login-card">
-        """, unsafe_allow_html=True)
-
-        if user_names:
-            selected_user = st.selectbox(
-                "Cliente / Usuario",
-                user_names,
-                key=f"client_user_{prop_sel}"
-            )
-            pass_input = st.text_input(
-                "Introduce tu contraseña",
-                type="password",
-                key=f"client_pass_{prop_sel}_{selected_user}"
-            )
-
-            if st.button(
-                "🔓 ENTRAR AL DOSSIER",
-                use_container_width=True,
-                key=f"login_{prop_sel}_{selected_user}"
-            ):
-                if pass_input == usuarios_dict[selected_user]["password"]:
-                    usuarios_dict[selected_user]["visitas"] += 1
-                    guardar_datos(db)
-                    st.session_state.auth_client_user = selected_user
-                    st.session_state.auth_client_property = prop_sel
-                    st.rerun()
-                else:
-                    st.error("Contraseña incorrecta. Acceso denegado.")
-        else:
-            st.warning("No hay usuarios configurados para esta propiedad.")
-
-        st.markdown("""
-                </div>
-            </div>
+        <div class="login-wrap"><div class="login-box">
+        <div class="login-kicker">DOSSIER INMOBILIARIO PRIVADO</div>
+        <div class="login-lock">🔒</div>
+        <h1 class="login-title">Acceso privado</h1>
+        <div class="login-subtitle">
+        Introduce la contraseña que te ha proporcionado tu asesor.
         </div>
         """, unsafe_allow_html=True)
 
-        # El dossier solamente aparece después de introducir la contraseña correcta.
-        if user_names and (
-            st.session_state.auth_client_user == selected_user
-            and st.session_state.get("auth_client_property") == prop_sel
-        ):
-            st.success(f"Sesión activa para: **{selected_user}**")
-            st.markdown("---")
-    else:
-        st.info("No hay propiedades disponibles.")
+        client_password = st.text_input(
+            "Contraseña",
+            type="password",
+            placeholder="Introduce tu contraseña",
+            key="single_client_password"
+        )
 
+        if st.button("🔓 ENTRAR AL DOSSIER", use_container_width=True,
+                     key="single_client_login"):
+            found_user = None
+            for u_name, u_info in db["usuarios"].items():
+                if client_password == u_info.get("password", ""):
+                    found_user = u_name
+                    break
+
+            if found_user:
+                st.session_state.auth_client_user = found_user
+                st.rerun()
+            else:
+                st.error("Contraseña incorrecta. Acceso denegado.")
+
+        st.markdown("</div></div>", unsafe_allow_html=True)
+
+    else:
+        user_name = st.session_state.auth_client_user
+        user_info = db["usuarios"].get(user_name, {})
+
+        allowed_ids = [
+            p for p in user_info.get("propiedades_permitidas", [])
+            if p in db.get("propiedades", {})
+        ]
+
+        st.sidebar.success(f"👤 Sesión: {user_name}")
+
+        if st.sidebar.button("🚪 Cerrar sesión", key="client_logout"):
+            st.session_state.auth_client_user = None
+            st.rerun()
+
+        if not allowed_ids:
+            st.warning("No tienes ninguna vivienda asignada. Contacta con tu asesor.")
+        else:
+            prop_sel = st.sidebar.selectbox(
+                "🏠 Vivienda disponible",
+                allowed_ids,
+                format_func=lambda x: db["propiedades"][x].get("titulo_es", x),
+                key="allowed_property_select"
+            )
+            prop_data = db["propiedades"][prop_sel]
+            titulo = prop_data["titulo_es"] if is_es else prop_data["titulo_en"]
+
+            if prop_data.get("portada"):
+                cover_src = "data:image/jpeg;base64," + prop_data["portada"]
+                cover_img_html = (
+                    f'<img class="cover-image" src="{cover_src}" '
+                    f'alt="Portada de la vivienda">'
+                )
+            else:
+                cover_img_html = (
+                    '<div class="cover-image" '
+                    'style="background:linear-gradient(135deg,#252a31,#0f1115);"></div>'
+                )
+
+            st.markdown("""
+            <style>
+            .cover-shell {
+                position:relative;width:100%;min-height:48vh;border-radius:18px;
+                overflow:hidden;display:flex;align-items:center;
+                justify-content:center;margin:0 auto 24px;background:#15171c;
+                border:1px solid rgba(197,168,128,.35);
+                box-shadow:0 20px 60px rgba(0,0,0,.45);
+            }
+            .cover-image {
+                position:absolute;inset:0;width:100%;height:100%;
+                object-fit:cover;filter:brightness(.48);
+            }
+            .cover-overlay {
+                position:absolute;inset:0;
+                background:linear-gradient(180deg,rgba(15,17,21,.18) 0%,
+                rgba(15,17,21,.52) 55%,rgba(15,17,21,.92) 100%);
+            }
+            .cover-content {
+                position:relative;z-index:2;width:min(900px,90%);
+                text-align:center;padding:42px 28px;
+            }
+            .cover-kicker {
+                color:#c5a880;font-size:13px;letter-spacing:4px;
+                text-transform:uppercase;font-weight:700;margin-bottom:18px;
+            }
+            .cover-title {
+                color:#fff !important;font-size:clamp(30px,5vw,58px);
+                line-height:1.08;margin:0 0 12px;font-weight:700;
+            }
+            .cover-location {color:#e5e7eb;font-size:17px;}
+            </style>
+            """, unsafe_allow_html=True)
+
+            st.markdown(
+                f"""
+                <div class="cover-shell">
+                    {cover_img_html}
+                    <div class="cover-overlay"></div>
+                    <div class="cover-content">
+                        <div class="cover-kicker">DOSSIER INMOBILIARIO PRIVADO</div>
+                        <h1 class="cover-title">{titulo}</h1>
+                        <div class="cover-location">📍 {prop_data['ubicacion']}</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            if is_es:
+                st.title(prop_data["titulo_es"])
+                st.write(prop_data["descripcion_es"])
+            else:
+                st.title(prop_data["titulo_en"])
+                st.write(prop_data["descripcion_en"])
+
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Superficie" if is_es else "Area", prop_data["superficie"])
+            c2.metric("Habitaciones" if is_es else "Bedrooms", prop_data["habitaciones"])
+            c3.metric("Baños" if is_es else "Bathrooms", prop_data["banos"])
+            c4.metric("Precio" if is_es else "Price", prop_data["precio"])
+
+            if prop_data.get("imagenes"):
+                st.markdown("---")
+                st.subheader("📸 Galería" if is_es else "📸 Gallery")
+                render_galeria(prop_data["imagenes"], is_es=is_es, height=480)
+
+            if prop_data.get("video_url"):
+                st.markdown("---")
+                st.subheader("🎬 Vídeo" if is_es else "🎬 Video")
+                st.video(prop_data["video_url"])
+
+            st.markdown("---")
+            st.link_button(
+                "💬 Contactar por WhatsApp",
+                f"https://wa.me/{WHATSAPP_NUMBER}"
+            )
+
+# =============================================================================
+# PANEL DE ADMINISTRACIÓN
+# =============================================================================
 elif modo == "Panel de Administración (Crear/Editar)":
     st.title("🛠️ Panel de Control - Administración")
-    
-    admin_pass = st.text_input("Contraseña exclusiva de Administrador:", type="password")
-    
+
+    admin_pass = st.text_input(
+        "Contraseña exclusiva de Administrador:",
+        type="password",
+        key="admin_login_password"
+    )
+
     if admin_pass == db["admin_password"]:
         st.success("Sesión de administrador activa.")
-        
-        tab1, tab2, tab3 = st.tabs(["Editar Propiedad", "Control de Usuarios y Visitas", "Crear Nueva Propiedad"])
+
+        tab1, tab2, tab3 = st.tabs([
+            "Editar Propiedad",
+            "👥 Clientes y Permisos",
+            "Crear Nueva Propiedad"
+        ])
 
         with tab1:
             prop_keys = list(db["propiedades"].keys())
             if prop_keys:
-                prop_edit = st.selectbox("Seleccionar Inmueble para Modificar:", prop_keys, key="edit_prop_select")
+                prop_edit = st.selectbox(
+                    "Seleccionar Inmueble para Modificar:",
+                    prop_keys,
+                    key="edit_prop_select"
+                )
                 p_data = db["propiedades"][prop_edit]
 
                 st.subheader("🖼️ Portada de Acceso del Cliente")
-                st.caption("Esta imagen será la portada que verá el cliente antes de introducir su contraseña. Cada vivienda puede tener una portada diferente.")
+                st.caption("Esta imagen será la portada de esta vivienda.")
 
-                if "portada" not in p_data:
-                    p_data["portada"] = ""
-
-                if p_data["portada"]:
-                    portada_bytes = base64.b64decode(p_data["portada"])
+                if p_data.get("portada"):
                     st.image(
-                        portada_bytes,
+                        base64.b64decode(p_data["portada"]),
                         caption="Portada actual de esta vivienda",
                         use_container_width=True
                     )
@@ -487,171 +540,204 @@ elif modo == "Panel de Administración (Crear/Editar)":
                 nueva_portada = st.file_uploader(
                     "Seleccionar / reemplazar portada (JPG, PNG o WEBP)",
                     type=["jpg", "jpeg", "png", "webp"],
-                    accept_multiple_files=False,
                     key=f"cover_upload_{prop_edit}"
                 )
 
-                if nueva_portada:
-                    if st.button(
-                        "⭐ Guardar esta imagen como Portada",
-                        key=f"save_cover_{prop_edit}"
-                    ):
-                        p_data["portada"] = image_to_base64(nueva_portada)
-                        guardar_datos(db)
-                        st.success("Portada guardada correctamente para esta vivienda.")
-                        st.rerun()
+                if nueva_portada and st.button(
+                    "⭐ Guardar esta imagen como Portada",
+                    key=f"save_cover_{prop_edit}"
+                ):
+                    p_data["portada"] = image_to_base64(nueva_portada)
+                    guardar_datos(db)
+                    st.success("Portada guardada correctamente.")
+                    st.rerun()
 
                 st.markdown("---")
                 st.subheader("📸 Gestión de Fotografías")
-                if "imagenes" not in p_data:
-                    p_data["imagenes"] = []
-                
-                if p_data["imagenes"]:
+
+                if p_data.get("imagenes"):
                     grid_cols = st.columns(4)
                     for i, img_b64 in enumerate(p_data["imagenes"]):
-                        img_bytes = base64.b64decode(img_b64)
-                        grid_cols[i % 4].image(img_bytes, use_container_width=True)
-                        
+                        col = grid_cols[i % 4]
+                        col.image(base64.b64decode(img_b64), use_container_width=True)
                         if i == 0:
-                            grid_cols[i % 4].info("⭐ Principal")
-                        else:
-                            if grid_cols[i % 4].button(f"⭐ Fijar como 1ª", key=f"main_{prop_edit}_{i}"):
-                                p_data["imagenes"].insert(0, p_data["imagenes"].pop(i))
-                                guardar_datos(db)
-                                st.rerun()
-
-                        if grid_cols[i % 4].button(f"🗑️ Eliminar #{i+1}", key=f"del_{prop_edit}_{i}"):
+                            col.info("⭐ Principal")
+                        elif col.button(f"⭐ Fijar como 1ª", key=f"main_{prop_edit}_{i}"):
+                            p_data["imagenes"].insert(0, p_data["imagenes"].pop(i))
+                            guardar_datos(db)
+                            st.rerun()
+                        if col.button(f"🗑️ Eliminar #{i+1}", key=f"del_{prop_edit}_{i}"):
                             p_data["imagenes"].pop(i)
                             guardar_datos(db)
                             st.rerun()
 
                 nuevas_fotos = st.file_uploader(
-                    "Añadir nuevas imágenes (JPG, PNG, WEBP)", 
-                    type=["jpg", "jpeg", "png", "webp"], 
-                    accept_multiple_files=True
+                    "Añadir nuevas imágenes (JPG, PNG, WEBP)",
+                    type=["jpg", "jpeg", "png", "webp"],
+                    accept_multiple_files=True,
+                    key=f"new_photos_{prop_edit}"
                 )
-                
-                if nuevas_fotos:
-                    if st.button("⬆️ Subir e Integrar Fotos"):
-                        for f in nuevas_fotos:
-                            b64_str = image_to_base64(f)
-                            p_data["imagenes"].append(b64_str)
-                        guardar_datos(db)
-                        st.success(f"¡{len(nuevas_fotos)} fotos añadidas correctamente!")
-                        st.rerun()
+
+                if nuevas_fotos and st.button(
+                    "⬆️ Subir e Integrar Fotos",
+                    key=f"upload_photos_{prop_edit}"
+                ):
+                    for f in nuevas_fotos:
+                        p_data.setdefault("imagenes", []).append(image_to_base64(f))
+                    guardar_datos(db)
+                    st.success(f"¡{len(nuevas_fotos)} fotos añadidas correctamente!")
+                    st.rerun()
 
                 st.markdown("---")
-
-                with st.form("edit_form"):
+                with st.form(f"edit_form_{prop_edit}"):
                     st.subheader("📝 Datos del Inmueble")
                     col_a, col_b = st.columns(2)
-                    p_data["titulo_es"] = col_a.text_input("Título (ES)", p_data["titulo_es"])
-                    p_data["titulo_en"] = col_b.text_input("Título (EN)", p_data["titulo_en"])
+                    titulo_es = col_a.text_input("Título (ES)", p_data["titulo_es"])
+                    titulo_en = col_b.text_input("Título (EN)", p_data["titulo_en"])
+                    precio = col_a.text_input("Precio", p_data["precio"])
+                    ubicacion = col_b.text_input("Ubicación", p_data["ubicacion"])
+                    superficie = col_a.text_input("Superficie", p_data["superficie"])
+                    habitaciones = col_a.text_input("Habitaciones", p_data["habitaciones"])
+                    banos = col_b.text_input("Baños", p_data["banos"])
+                    descripcion_es = st.text_area("Descripción (ES)", p_data["descripcion_es"])
+                    descripcion_en = st.text_area("Descripción (EN)", p_data["descripcion_en"])
+                    video_url = st.text_input(
+                        "URL del Vídeo (YouTube/Vimeo/MP4)",
+                        p_data.get("video_url", "")
+                    )
 
-                    p_data["precio"] = col_a.text_input("Precio", p_data["precio"])
-                    p_data["ubicacion"] = col_b.text_input("Ubicación", p_data["ubicacion"])
-
-                    p_data["superficie"] = col_a.text_input("Superficie", p_data["superficie"])
-                    p_data["habitaciones"] = col_a.text_input("Habitaciones", p_data["habitaciones"])
-                    p_data["banos"] = col_b.text_input("Baños", p_data["banos"])
-
-                    p_data["descripcion_es"] = st.text_area("Descripción (ES)", p_data["descripcion_es"])
-                    p_data["descripcion_en"] = st.text_area("Descripción (EN)", p_data["descripcion_en"])
-
-                    p_data["video_url"] = st.text_input("URL del Vídeo (YouTube/Vimeo/MP4)", p_data.get("video_url", ""))
-
-                    submitted = st.form_submit_button("💾 Guardar Datos y Textos")
-                    if submitted:
+                    if st.form_submit_button("💾 Guardar Datos y Textos"):
+                        p_data.update({
+                            "titulo_es": titulo_es,
+                            "titulo_en": titulo_en,
+                            "precio": precio,
+                            "ubicacion": ubicacion,
+                            "superficie": superficie,
+                            "habitaciones": habitaciones,
+                            "banos": banos,
+                            "descripcion_es": descripcion_es,
+                            "descripcion_en": descripcion_en,
+                            "video_url": video_url
+                        })
                         guardar_datos(db)
-                        st.toast("¡Datos del inmueble guardados!")
+                        st.success("¡Datos del inmueble guardados!")
 
         with tab2:
-            st.subheader("👥 Gestión de Contraseñas de Usuario y Contador de Visitas")
+            st.subheader("👥 Clientes, contraseñas y viviendas autorizadas")
+            st.info(
+                "Cada cliente tiene UNA sola contraseña. "
+                "Aquí eliges exactamente qué viviendas puede ver."
+            )
 
-            with st.expander("🔐 Generador de Contraseñas del Administrador", expanded=True):
-                st.caption("Genera una clave independiente para asignarla a cualquier vivienda o cliente.")
-                longitud_clave = st.slider("Longitud de la contraseña", 8, 32, 12, key="admin_password_length")
-                if st.button("🎲 Generar nueva contraseña", key="admin_generate_password"):
-                    st.session_state.admin_generated_password = generar_contrasena(longitud_clave)
-                if "admin_generated_password" in st.session_state:
-                    st.code(st.session_state.admin_generated_password, language=None)
-                    st.caption("Copia esta contraseña y asígnala al usuario desde la sección correspondiente.")
+            st.subheader("🔐 Generador de Contraseñas")
+            col_g1, col_g2 = st.columns([1, 2])
+            longitud = col_g1.slider(
+                "Longitud", 8, 32, 12, key="admin_generator_length"
+            )
+            if col_g2.button(
+                "🎲 Generar contraseña", key="admin_generator_button"
+            ):
+                st.session_state.admin_generated_password = generar_contrasena(longitud)
 
-            prop_users_key = st.selectbox("Seleccionar Inmueble para ver usuarios:", list(db["propiedades"].keys()), key="users_prop_select")
-            u_data = db["propiedades"][prop_users_key]
-
-            if "usuarios" not in u_data:
-                u_data["usuarios"] = {}
-
-            st.write("### Usuarios Actuales y Visitas Registradas")
-            if u_data["usuarios"]:
-                for u_name, u_info in list(u_data["usuarios"].items()):
-                    with st.expander(f"👤 {u_name} — 👁️ {u_info['visitas']} visitas"):
-                        nueva_contra = st.text_input(
-                            f"Cambiar contraseña para '{u_name}':",
-                            value=u_info["password"],
-                            type="password",
-                            key=f"pass_{prop_users_key}_{u_name}"
-                        )
-                        col_u1, col_u2, col_u3 = st.columns(3)
-                        if col_u1.button(f"Actualizar Clave", key=f"save_{prop_users_key}_{u_name}"):
-                            if nueva_contra.strip():
-                                u_data["usuarios"][u_name]["password"] = nueva_contra.strip()
-                                guardar_datos(db)
-                                st.success(f"Contraseña actualizada para {u_name}.")
-                                st.rerun()
-                            else:
-                                st.warning("La contraseña no puede estar vacía.")
-                        if col_u2.button("🔐 Generar Clave", key=f"gen_{prop_users_key}_{u_name}"):
-                            nueva_generada = generar_contrasena()
-                            u_data["usuarios"][u_name]["password"] = nueva_generada
-                            guardar_datos(db)
-                            st.success(f"Nueva contraseña generada para {u_name}: `{nueva_generada}`")
-                            st.info("Guárdala antes de cerrar o recargar esta página.")
-                            st.rerun()
-                        if col_u2.button(f"🗑️ Eliminar Usuario", key=f"del_u_{prop_users_key}_{u_name}"):
-                            del u_data["usuarios"][u_name]
-                            guardar_datos(db)
-                            st.warning(f"Usuario {u_name} eliminado.")
-                            st.rerun()
-            else:
-                st.info("No hay usuarios creados para esta propiedad.")
+            if "admin_generated_password" in st.session_state:
+                st.code(st.session_state.admin_generated_password)
 
             st.markdown("---")
-            st.subheader("➕ Añadir Nuevo Usuario a esta Propiedad")
-            nuevo_usuario_nombre = st.text_input("Nombre del Usuario / Cliente:")
-            nuevo_usuario_pass = st.text_input(
-                "Contraseña Asignada (por defecto: nala0711):",
+            st.subheader("Clientes existentes")
+            all_properties = list(db["propiedades"].keys())
+
+            for u_name, u_info in list(db["usuarios"].items()):
+                with st.expander(f"👤 {u_name}", expanded=True):
+                    new_pass = st.text_input(
+                        "Contraseña del cliente",
+                        value=u_info.get("password", "nala0711"),
+                        type="password",
+                        key=f"client_pass_{u_name}"
+                    )
+
+                    selected_properties = st.multiselect(
+                        "🏠 Viviendas que puede ver este cliente",
+                        options=all_properties,
+                        default=[
+                            p for p in u_info.get("propiedades_permitidas", [])
+                            if p in all_properties
+                        ],
+                        format_func=lambda x: db["propiedades"][x].get("titulo_es", x),
+                        key=f"client_properties_{u_name}"
+                    )
+
+                    col1, col2 = st.columns(2)
+
+                    if col1.button("💾 Guardar cliente", key=f"save_client_{u_name}"):
+                        if not new_pass.strip():
+                            st.error("La contraseña no puede estar vacía.")
+                        else:
+                            u_info["password"] = new_pass.strip()
+                            u_info["propiedades_permitidas"] = selected_properties
+                            guardar_datos(db)
+                            st.success(f"Cliente '{u_name}' actualizado.")
+                            st.rerun()
+
+                    if col2.button(
+                        "🎲 Generar y guardar nueva clave",
+                        key=f"generate_save_{u_name}"
+                    ):
+                        nueva = generar_contrasena()
+                        u_info["password"] = nueva
+                        u_info["propiedades_permitidas"] = selected_properties
+                        guardar_datos(db)
+                        st.success(f"Nueva contraseña para '{u_name}': {nueva}")
+                        st.rerun()
+
+                    if st.button("🗑️ Eliminar cliente", key=f"delete_client_{u_name}"):
+                        if len(db["usuarios"]) > 1:
+                            del db["usuarios"][u_name]
+                            guardar_datos(db)
+                            st.rerun()
+                        else:
+                            st.warning("Debe existir al menos un cliente.")
+
+            st.markdown("---")
+            st.subheader("➕ Crear nuevo cliente")
+
+            new_client_name = st.text_input("Nombre del cliente", key="new_client_name")
+            new_client_password = st.text_input(
+                "Contraseña del cliente",
                 value="nala0711",
                 type="password",
-                key="new_user_pass_input"
+                key="new_client_password"
             )
-            if st.button("🎲 Generar contraseña para este cliente", key="generate_new_user_password"):
-                st.session_state.generated_new_password = generar_contrasena()
-                st.rerun()
+            new_client_properties = st.multiselect(
+                "🏠 Viviendas que podrá ver",
+                options=all_properties,
+                format_func=lambda x: db["propiedades"][x].get("titulo_es", x),
+                key="new_client_properties"
+            )
 
-            if "generated_new_password" in st.session_state:
-                st.info(f"Contraseña generada: `{st.session_state.generated_new_password}`")
-                nuevo_usuario_pass = st.session_state.generated_new_password
-
-            if st.button("Crear Usuario y Asignar Clave"):
-                if nuevo_usuario_nombre:
-                    if nuevo_usuario_nombre not in u_data["usuarios"]:
-                        password_final = nuevo_usuario_pass.strip() or "nala0711"
-                        u_data["usuarios"][nuevo_usuario_nombre] = {"password": password_final, "visitas": 0}
-                        guardar_datos(db)
-                        st.success(f"Usuario '{nuevo_usuario_nombre}' creado con éxito. Contraseña: `{password_final}`")
-                        st.session_state.pop("generated_new_password", None)
-                        st.rerun()
-                    else:
-                        st.error("Ese nombre de usuario ya existe en esta propiedad.")
+            if st.button("➕ Crear cliente", key="create_client"):
+                if not new_client_name.strip():
+                    st.warning("Introduce un nombre para el cliente.")
+                elif new_client_name in db["usuarios"]:
+                    st.error("Ese cliente ya existe.")
+                elif not new_client_password.strip():
+                    st.error("La contraseña no puede estar vacía.")
                 else:
-                    st.warning("Introduce un nombre de usuario válido.")
+                    db["usuarios"][new_client_name] = {
+                        "password": new_client_password.strip(),
+                        "propiedades_permitidas": new_client_properties
+                    }
+                    guardar_datos(db)
+                    st.success(f"Cliente '{new_client_name}' creado correctamente.")
+                    st.rerun()
 
         with tab3:
             st.subheader("Añadir Nueva Propiedad al Portafolio")
-            new_id = st.text_input("Identificador único (ej: piso-gran-via, atico-patacona)")
-            if st.button("Crear Inmueble"):
+            new_id = st.text_input(
+                "Identificador único (ej: piso-gran-via, atico-patacona)",
+                key="new_property_id"
+            )
+
+            if st.button("Crear Inmueble", key="create_property"):
                 if new_id and new_id not in db["propiedades"]:
                     db["propiedades"][new_id] = {
                         "titulo_es": "Nueva Propiedad",
@@ -665,9 +751,7 @@ elif modo == "Panel de Administración (Crear/Editar)":
                         "descripcion_en": "Description...",
                         "video_url": "",
                         "portada": "",
-                        "usuarios": {
-                            "cliente_inicial": {"password": "nala0711", "visitas": 0}
-                        },
+                        "usuarios": {},
                         "imagenes": []
                     }
                     guardar_datos(db)
@@ -675,6 +759,6 @@ elif modo == "Panel de Administración (Crear/Editar)":
                     st.rerun()
                 elif new_id in db["propiedades"]:
                     st.error("Ese identificador ya existe.")
+
     elif admin_pass != "":
         st.error("Clave de administrador incorrecta. Acceso denegado.")
-      
